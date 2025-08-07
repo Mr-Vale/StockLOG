@@ -34,9 +34,9 @@ class CattleTableModel(QAbstractTableModel):
         col = index.column()
         value = self._data[row][col]
         if role == Qt.DisplayRole:
-            # Pad NLIS ID and RFID
-            if col == 1 or col == 2:
-                return f"  {value}  "
+            # Entry date, Age, and Safe Sale Date columns: show formatted string
+            if col == 0 or col == 7 or col == 8:
+                return value[1]
             return value
         if role == Qt.TextAlignmentRole:
             return Qt.AlignCenter
@@ -63,6 +63,30 @@ class AllColumnsFilterProxyModel(QSortFilterProxyModel):
             if filter_text.lower() in data.lower():
                 return True
         return False
+
+    def headerData(self, section, orientation, role=Qt.DisplayRole):
+        if orientation == Qt.Vertical and role == Qt.DisplayRole:
+            return section + 1
+        return super().headerData(section, orientation, role)
+
+    def lessThan(self, left, right):
+        column = left.column()
+        # Entry date sorting
+        if column == 0:
+            left_raw = self.sourceModel()._data[left.row()][0][0]
+            right_raw = self.sourceModel()._data[right.row()][0][0]
+            return left_raw < right_raw
+        # Age sorting
+        if column == 7:
+            left_raw = self.sourceModel()._data[left.row()][7][0]
+            right_raw = self.sourceModel()._data[right.row()][7][0]
+            return left_raw < right_raw
+        # Safe Sale Date sorting
+        if column == 8:
+            left_raw = self.sourceModel()._data[left.row()][8][0]
+            right_raw = self.sourceModel()._data[right.row()][8][0]
+            return left_raw < right_raw
+        return super().lessThan(left, right)
 
 class ActiveCattlePage(QWidget):
     def __init__(self, parent=None):
@@ -135,9 +159,9 @@ class ActiveCattlePage(QWidget):
         self.table_view.setSortingEnabled(True)
         self.table_view.setAlternatingRowColors(True)
 
-        # Center headers and autosize columns
+        # Center headers and make columns resizable by user
         header = self.table_view.horizontalHeader()
-        header.setSectionResizeMode(QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(QHeaderView.Interactive)
         header.setDefaultAlignment(Qt.AlignCenter)
 
         # Enable right-click to copy
@@ -321,6 +345,7 @@ class ActiveCattlePage(QWidget):
             years = age_months // 12
             months = age_months % 12
             age_str = f"{months}M {years}Y"
+            total_age_months = age_months
 
             sex = (row[4] or "").upper()
             if sex == 'M':
@@ -349,24 +374,36 @@ class ActiveCattlePage(QWidget):
             mob_stats[mob]["value"] += purchase_price
 
             entry_date_str = entry_date_dt.strftime("%d/%m/%Y")
-            safe_sale = entry_date_dt + datetime.timedelta(days=90)
-            safe_sale_str = safe_sale.strftime("%d/%m/%Y")
+            safe_sale_dt = entry_date_dt + datetime.timedelta(days=90)
+            safe_sale_str = safe_sale_dt.strftime("%d/%m/%Y")
 
+            # Store (datetime object, string) tuple for entry date and safe sale date,
+            # and (int, string) for age
             self.table_data.append([
-                entry_date_str, 
-                (row[1] or "").upper(),                
-                str(row[2]) if row[2] is not None else "",   
+                (entry_date_dt, entry_date_str),  # entry date (raw, display)
+                (row[1] or "").upper(),
+                str(row[2]) if row[2] is not None else "",
                 (row[3] or "").upper(),
                 sex,
                 mob,
                 f"${purchase_price:.2f}",
-                age_str,
-                safe_sale_str
+                (total_age_months, age_str),      # age (int, display)
+                (safe_sale_dt, safe_sale_str)     # safe sale date (raw, display)
             ])
 
         self.model = CattleTableModel(self.table_data, self.table_headers)
         self.proxy_model.setSourceModel(self.model)
         self.table_view.setModel(self.proxy_model)
+        
+        header = self.table_view.horizontalHeader()
+        # 1. Auto-resize to contents for all columns
+        for col in range(self.model.columnCount()):
+            header.setSectionResizeMode(col, QHeaderView.ResizeToContents)
+        # 2. Switch to Interactive so the user can resize after
+        QApplication.processEvents()  # Ensure the view updates first!
+        for col in range(self.model.columnCount()):
+            header.setSectionResizeMode(col, QHeaderView.Interactive)
+        
 
         def bold(text):
             return f"<b>{text}</b>"
