@@ -2,6 +2,9 @@ import os
 import sqlite3
 import datetime
 import csv
+import time
+import json
+import subprocess
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QTableView,
@@ -14,6 +17,8 @@ from PyQt5.QtGui import QPainter
 
 DATA_DIR = r"C:\ProgramData\StockLOG"
 CORE_DB_PATH = os.path.join(DATA_DIR, "Core", "master.db")
+UPLOAD_DIR = os.path.join(DATA_DIR, "UploadQueue")
+MERGE_SCRIPT_PATH = r"C:\Program Files\StockLOG\App\logic\merge_uploads.py"
 
 class CattleTableModel(QAbstractTableModel):
     def __init__(self, data, headers):
@@ -114,7 +119,7 @@ class ActiveCattlePage(QWidget):
         # --- Controls row: Refresh button + Filter + Export Buttons + Print Button ---
         controls_row = QHBoxLayout()
         self.refresh_button = QPushButton(" Refresh ")
-        self.refresh_button.clicked.connect(self.load_data)
+        self.refresh_button.clicked.connect(self.load_data_with_status_check)
         controls_row.addWidget(self.refresh_button)
 
         self.export_table_btn = QPushButton(" Export Table ")
@@ -174,8 +179,14 @@ class ActiveCattlePage(QWidget):
         # Store summaries for export
         self.cattle_summary_rows = []
         self.mob_summary_rows = []
-
-        self.load_data()
+        
+        # Refresh Button
+        self.load_data_with_status_check()
+    
+    # Global refresh button
+    def refresh_data(self):
+        self.load_data_with_status_check()
+        
 
     def apply_filter(self, text):
         self.proxy_model.setFilterWildcard(text)
@@ -299,6 +310,107 @@ class ActiveCattlePage(QWidget):
             self.render(painter)
             painter.end()
 
+    def load_data_with_status_check(self):
+        # Perform status check and update if required
+        status_updates = self.check_and_update_cattle_status()
+        if status_updates:
+            # Write a .json file to the upload queue and call the merge script
+            ts = int(time.time())
+            if not os.path.exists(UPLOAD_DIR):
+                os.makedirs(UPLOAD_DIR)
+            log_path = os.path.join(UPLOAD_DIR, f"{ts}_status_update_log.json")
+            try:
+                with open(log_path, "w", encoding="utf-8") as f:
+                    json.dump(status_updates, f, indent=2)
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to write status update log:\n{e}")
+                return
+            # Call the merge script
+            try:
+                result = subprocess.run(
+                    ["python", MERGE_SCRIPT_PATH],
+                    capture_output=True,
+                    text=True,
+                    check=False
+                )
+                if result.returncode != 0:
+                    QMessageBox.warning(self, "Merge Failed", f"Merge script failed:\n{result.stderr}")
+                else:
+                    merge_msg = result.stdout if result.stdout else "Merge finished."
+                    QMessageBox.information(self, "Status Synced", f"{len(status_updates)} animal(s) set to Inactive. Merge complete.\n{merge_msg}")
+            except Exception as e:
+                QMessageBox.critical(self, "Merge Error", f"Failed to run merge:\n{e}")
+        self.load_data()
+
+    def check_and_update_cattle_status(self):
+        """
+        For all cattle with exit_date set:
+          - Set status to INACTIVE if exit_date <= now
+          - Set status to ACTIVE if exit_date > now or not set
+        Write a .json file to the upload queue and call the merge script if any status would change.
+        """
+        now_ts = int(time.time())
+        updates = []
+        if not os.path.exists(CORE_DB_PATH):
+            return []
+
+        conn = sqlite3.connect(CORE_DB_PATH)
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT nlis_id, nlis_rfid, exit_date, status FROM cattle_registry
+            WHERE exit_date IS NOT NULL AND exit_date != ''
+        """)
+        animals = cur.fetchall()
+        conn.close()
+
+        for nlis_id, nlis_rfid, exit_date, current_status in animals:
+            try:
+                exit_ts = int(exit_date)
+                if exit_ts <= now_ts:
+                    new_status = "INACTIVE"
+                else:
+                    new_status = "ACTIVE"
+                # Only prepare update if status would change
+                if current_status.upper() != new_status:
+                    updates.append({
+                        "nlis_id": nlis_id,
+                        "nlis_rfid": nlis_rfid,
+                        "status": new_status,
+                        "last_updated": now_ts
+                    })
+            except Exception:
+                continue
+
+        if updates:
+            # Write a .json file to the upload queue and call the merge script
+            ts = int(time.time())
+            if not os.path.exists(UPLOAD_DIR):
+                os.makedirs(UPLOAD_DIR)
+            log_path = os.path.join(UPLOAD_DIR, f"{ts}_status_update_log.json")
+            try:
+                with open(log_path, "w", encoding="utf-8") as f:
+                    json.dump(updates, f, indent=2)
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to write status update log:\n{e}")
+                return
+            # Call the merge script
+            try:
+                result = subprocess.run(
+                    ["python", MERGE_SCRIPT_PATH],
+                    capture_output=True,
+                    text=True,
+                    check=False
+                )
+                if result.returncode != 0:
+                    QMessageBox.warning(self, "Merge Failed", f"Merge script failed:\n{result.stderr}")
+                else:
+                    merge_msg = result.stdout if result.stdout else "Merge finished."
+                    QMessageBox.information(self, "Status Synced", f"{len(updates)} animal(s) status updated. Merge complete.\n{merge_msg}")
+            except Exception as e:
+                QMessageBox.critical(self, "Merge Error", f"Failed to run merge:\n{e}")
+        return updates
+
+
     def load_data(self):
         for i in reversed(range(self.mob_layout.count())):
             widget = self.mob_layout.itemAt(i).widget()
@@ -321,7 +433,7 @@ class ActiveCattlePage(QWidget):
                 entry_date, nlis_id, nlis_rfid, breed_description,
                 sex, mob, purchase_price
             FROM cattle_registry
-            WHERE status = 'active'
+            WHERE LOWER(status) = 'active'
         """)
 
         rows = cursor.fetchall()
@@ -443,4 +555,5 @@ class ActiveCattlePage(QWidget):
             self.mob_layout.addWidget(QLabel(str(stats['F'])), mob_row, 3, alignment=Qt.AlignCenter)
             self.mob_layout.addWidget(QLabel(f"${stats['value']:.2f}"), mob_row, 4, alignment=Qt.AlignCenter)
             self.mob_summary_rows.append([mob, stats['total'], stats['M'], stats['F'], f"{stats['value']:.2f}"])
+
             mob_row += 1

@@ -290,6 +290,18 @@ class CattleEntryPage(QWidget):
         main_layout.addWidget(self.entry_table)
         self.setLayout(main_layout)
 
+    def refresh_data(self):
+        # Reload mob history and update mob dropdown
+        mob_list = self.load_mob_history()
+        self.mob.clear()
+        self.mob.addItems(mob_list)
+        self.mob.setCurrentText("")
+        # Optionally clear queued entries and table (uncomment if you want this)
+        # self.clear_queue()
+        # Clear the form fields
+        self.clear_fields()
+
+
     def _force_uppercase_textedit(self, textedit):
         cursor = textedit.textCursor()
         pos = cursor.position()
@@ -320,7 +332,7 @@ class CattleEntryPage(QWidget):
         entry = self.collect_data()
         try:
             self.validate_data(entry)
-            # Duplicate check (master.db, active and deactive cattle AND presubmit table)
+            # Duplicate check (master.db, active and inactive cattle AND presubmit table)
             if self.duplicate_in_master_or_queue(entry["nlis_id"], entry["nlis_rfid"]):
                 raise ValueError("NLIS ID or NLIS RFID already exists in the master database or queued entries.\n"
                                  "This animal entry cannot be queued.")
@@ -394,7 +406,7 @@ class CattleEntryPage(QWidget):
                 return True
             if nlis_rfid and entry.get("nlis_rfid") == nlis_rfid:
                 return True
-        # Check master database (active or deactive)
+        # Check master database (active or inactive)
         if not os.path.exists(CORE_DB_PATH):
             return False
         try:
@@ -514,7 +526,7 @@ class CattleEntryPage(QWidget):
             except Exception as e:
                 QMessageBox.critical(self, "File Error", f"Could not load CSV: {e}")
                 return
-            # Load all existing RFID and NLIS ID from master.db (active AND deactive)
+            # Load all existing RFID and NLIS ID from master.db (active AND inactive)
             existing_rfids = set()
             existing_ids = set()
             if os.path.exists(CORE_DB_PATH):

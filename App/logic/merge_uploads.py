@@ -24,117 +24,77 @@ def log_merge_event(conn, filename, entries_imported, error_log):
     """, (str(timestamp) + filename, filename, datetime.now().isoformat(), entries_imported, error_log))
     conn.commit()
 
-def merge_entry(conn, entry):
+def merge_general(conn, record):
     cursor = conn.cursor()
-    nlis_id = entry.get("nlis_id")
-    if not nlis_id:
-        raise ValueError("Entry missing NLIS ID")
+    now_int = int(time.time())
 
-    # Check if animal exists already in registry
-    cursor.execute("SELECT nlis_id FROM cattle_registry WHERE nlis_id = ?", (nlis_id,))
+    # Try to identify the record
+    id_field = None
+    id_value = None
+    if "nlis_id" in record and record["nlis_id"]:
+        id_field = "nlis_id"
+        id_value = record["nlis_id"]
+    elif "nlis_rfid" in record and record["nlis_rfid"]:
+        id_field = "nlis_rfid"
+        id_value = record["nlis_rfid"]
+    else:
+        raise ValueError("No identifier (nlis_id or nlis_rfid) present in record.")
+
+    # Check if record exists
+    cursor.execute(f"SELECT * FROM cattle_registry WHERE {id_field} = ?", (id_value,))
     exists = cursor.fetchone()
 
+    # Build the SET clause or columns/values for update/insert
+    update_fields = []
+    update_values = []
+    for k, v in record.items():
+        # Don't update the identifier field itself
+        if k in ["nlis_id", "nlis_rfid"]:
+            continue
+        update_fields.append(f"{k} = ?")
+        update_values.append(v)
+    update_fields.append("last_updated = ?")
+    update_values.append(now_int)
+
     if exists:
-        # Update existing record (now includes nlis_rfid)
-        cursor.execute("""
-            UPDATE cattle_registry SET
-                entry_date = ?,
-                nlis_rfid = ?,
-                source_pic = ?,
-                source_name = ?,
-                source_address = ?,
-                nvd_in_number = ?,
-                breed_description = ?,
-                sex = ?,
-                mob = ?,
-                purchase_price = ?,
-                status = 'active',
-                last_updated = ?
-            WHERE nlis_id = ?
-        """, (
-            entry.get("entry_date"),
-            entry.get("nlis_rfid"),
-            entry.get("source_pic"),
-            entry.get("source_name"),
-            entry.get("source_address"),
-            entry.get("nvd_in_number"),
-            entry.get("breed_description"),
-            entry.get("sex"),
-            entry.get("mob"),
-            entry.get("purchase_price"),
-            datetime.now().isoformat(),
-            nlis_id
-        ))
+        # Update only specified fields
+        sql = f"UPDATE cattle_registry SET {', '.join(update_fields)} WHERE {id_field} = ?"
+        update_values.append(id_value)
+        cursor.execute(sql, update_values)
     else:
-        # Insert new record (now includes nlis_rfid)
-        cursor.execute("""
-            INSERT INTO cattle_registry (
-                nlis_id, nlis_rfid, entry_date, source_pic, source_name, source_address, 
-                nvd_in_number, breed_description, sex, mob, purchase_price, status,
-                created_at, last_updated
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
-        """, (
-            nlis_id,
-            entry.get("nlis_rfid"),
-            entry.get("entry_date"),
-            entry.get("source_pic"),
-            entry.get("source_name"),
-            entry.get("source_address"),
-            entry.get("nvd_in_number"),
-            entry.get("breed_description"),
-            entry.get("sex"),
-            entry.get("mob"),
-            entry.get("purchase_price"),
-            datetime.now().isoformat(),
-            datetime.now().isoformat()
-        ))
-    conn.commit()
-
-def merge_exit(conn, exit_entry):
-    cursor = conn.cursor()
-    nlis_id = exit_entry.get("nlis_id")
-    if not nlis_id:
-        raise ValueError("Exit entry missing NLIS ID")
-
-    # Update cattle_registry to mark sold/dead and fill exit fields
-    cursor.execute("""
-        UPDATE cattle_registry SET
-            exit_date = ?,
-            destination = ?,
-            sale_price = ?,
-            nvd_out_number = ?,
-            status = 'sold',
-            last_updated = ?
-        WHERE nlis_id = ?
-    """, (
-        exit_entry.get("exit_date"),
-        exit_entry.get("destination"),
-        exit_entry.get("sale_price"),
-        exit_entry.get("nvd_out_number"),
-        datetime.now().isoformat(),
-        nlis_id
-    ))
+        # Insert new record with all provided fields + id fields
+        insert_fields = list(record.keys())
+        insert_values = [record[k] for k in insert_fields]
+        # Make sure last_updated and created_at are present
+        if "created_at" not in insert_fields:
+            insert_fields.append("created_at")
+            insert_values.append(now_int)
+        if "last_updated" not in insert_fields:
+            insert_fields.append("last_updated")
+            insert_values.append(now_int)
+        sql = f"INSERT INTO cattle_registry ({', '.join(insert_fields)}) VALUES ({', '.join(['?']*len(insert_fields))})"
+        cursor.execute(sql, insert_values)
     conn.commit()
 
 def process_file(conn, filepath):
     entries_imported = 0
     errors = []
 
-    with open(filepath, "r") as f:
+    with open(filepath, "r", encoding="utf-8") as f:
         try:
             data = json.load(f)
         except Exception as e:
             return 0, f"JSON load error: {e}"
 
+    # Accept both single-dict and list-of-dicts input for flexibility
+    if isinstance(data, dict):
+        data = [data]
+    elif not isinstance(data, list):
+        return 0, "JSON file must contain a list or a single object."
+
     for record in data:
         try:
-            # Decide if entry or exit by keys present
-            if "entry_date" in record:
-                merge_entry(conn, record)
-            elif "exit_date" in record:
-                merge_exit(conn, record)
-            else:
-                errors.append(f"Unknown record type in {filepath}: {record}")
+            merge_general(conn, record)
             entries_imported += 1
         except Exception as e:
             errors.append(str(e))

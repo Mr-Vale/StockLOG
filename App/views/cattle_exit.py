@@ -198,8 +198,13 @@ class CattleExitPage(QWidget):
         self.layout().addLayout(button_layout)
         self.layout().addWidget(QLabel("Queued Animal Exits:"))
         self.layout().addWidget(self.exit_table)
+        
+        #This commented out will leave exit NLIS & RFID selections blank on startup
+        #self.load_active_nlis_ids_and_rfids()
 
+    def refresh_data(self):
         self.load_active_nlis_ids_and_rfids()
+        self.clear_fields()
 
     def load_active_nlis_ids_and_rfids(self):
         self.rfid_set = set()
@@ -212,7 +217,7 @@ class CattleExitPage(QWidget):
             return
         conn = sqlite3.connect(DB_PATH)
         cur = conn.cursor()
-        cur.execute("SELECT nlis_id, nlis_rfid FROM cattle_registry WHERE status = 'active'")
+        cur.execute("SELECT nlis_id, nlis_rfid FROM cattle_registry WHERE status = 'ACTIVE'")
         rows = cur.fetchall()
         conn.close()
         self.nlis_id_combo.blockSignals(True)
@@ -226,7 +231,6 @@ class CattleExitPage(QWidget):
             if nlis_id:
                 nlis_id = str(nlis_id).upper()
                 self.id_set.add(nlis_id)
-                # Always map, even if RFID is blank
                 self.id_to_rfid[nlis_id] = str(nlis_rfid).upper() if nlis_rfid else ""
             if nlis_rfid:
                 nlis_rfid = str(nlis_rfid).upper()
@@ -345,17 +349,29 @@ class CattleExitPage(QWidget):
             os.makedirs(UPLOAD_DIR)
         filename = f"{int(time.time())}_Cattle_Exit_Batch.json"
         filepath = os.path.join(UPLOAD_DIR, filename)
-        cleaned = [
-            {
-                "nlis_id": exit["nlis_id"],
-                "nlis_rfid": exit["nlis_rfid"],
-                "exit_date": exit["exit_date"],
-                "destination": exit["destination"] or None,
-                "sale_price": exit["sale_price"],
-                "nvd_out_number": exit["nvd_out_number"] or None
-            }
-            for exit in self.presubmit_exits
-        ]
+        now_ts = int(time.time())
+        cleaned = []
+        for exit in self.presubmit_exits:
+            exit_copy = exit.copy()
+            # Ensure exit_date is an int (UNIX timestamp)
+            exit_ts = exit_copy["exit_date"]
+            if not isinstance(exit_ts, int):
+                try:
+                    exit_ts = int(exit_ts)
+                except Exception:
+                    exit_ts = 0
+            # Set status INACTIVE if exit_date is in past or today
+            if exit_ts <= now_ts:
+                exit_copy["status"] = "INACTIVE"
+            cleaned.append({
+                "nlis_id": exit_copy["nlis_id"],
+                "nlis_rfid": exit_copy["nlis_rfid"],
+                "exit_date": exit_copy["exit_date"],
+                "destination": exit_copy["destination"] or None,
+                "sale_price": exit_copy["sale_price"],
+                "nvd_out_number": exit_copy["nvd_out_number"] or None,
+                **({"status": "INACTIVE"} if exit_ts <= now_ts else {})
+            })
         try:
             with open(filepath, "w") as f:
                 json.dump(cleaned, f, indent=2)
