@@ -24,11 +24,10 @@ def log_merge_event(conn, filename, entries_imported, error_log):
     """, (str(timestamp) + filename, filename, datetime.now().isoformat(), entries_imported, error_log))
     conn.commit()
 
-def merge_general(conn, record):
+def upsert_cattle_registry(conn, record):
     cursor = conn.cursor()
     now_int = int(time.time())
 
-    # Try to identify the record
     id_field = None
     id_value = None
     if "nlis_id" in record and record["nlis_id"]:
@@ -40,15 +39,12 @@ def merge_general(conn, record):
     else:
         raise ValueError("No identifier (nlis_id or nlis_rfid) present in record.")
 
-    # Check if record exists
     cursor.execute(f"SELECT * FROM cattle_registry WHERE {id_field} = ?", (id_value,))
     exists = cursor.fetchone()
 
-    # Build the SET clause or columns/values for update/insert
     update_fields = []
     update_values = []
     for k, v in record.items():
-        # Don't update the identifier field itself
         if k in ["nlis_id", "nlis_rfid"]:
             continue
         update_fields.append(f"{k} = ?")
@@ -57,15 +53,12 @@ def merge_general(conn, record):
     update_values.append(now_int)
 
     if exists:
-        # Update only specified fields
         sql = f"UPDATE cattle_registry SET {', '.join(update_fields)} WHERE {id_field} = ?"
         update_values.append(id_value)
         cursor.execute(sql, update_values)
     else:
-        # Insert new record with all provided fields + id fields
         insert_fields = list(record.keys())
         insert_values = [record[k] for k in insert_fields]
-        # Make sure last_updated and created_at are present
         if "created_at" not in insert_fields:
             insert_fields.append("created_at")
             insert_values.append(now_int)
@@ -76,40 +69,163 @@ def merge_general(conn, record):
         cursor.execute(sql, insert_values)
     conn.commit()
 
+def merge_feed_stock(conn, record):
+    cursor = conn.cursor()
+    # Remove mode
+    if record.get("remove") and record.get("commodity"):
+        cursor.execute(
+            "DELETE FROM feed_stock WHERE UPPER(commodity)=?",
+            (record.get("commodity").upper(),)
+        )
+        conn.commit()
+        return
+
+    cursor.execute("""
+        SELECT id FROM feed_stock WHERE
+        commodity=? AND feed_type=? AND price_per_unit=?
+    """, (
+        record.get("commodity"),
+        record.get("feed_type"),
+        record.get("price_per_unit")
+    ))
+    exists = cursor.fetchone()
+    fields = [
+        "commodity", "feed_type", "unit_qty", "kg_per_unit", "price_per_unit",
+        "total_kg", "feed_price_per_kg", "total_feed_value"
+    ]
+    values = [record.get(f) for f in fields]
+    if exists:
+        cursor.execute("""
+            UPDATE feed_stock SET
+            unit_qty=?, kg_per_unit=?, total_kg=?, feed_price_per_kg=?, total_feed_value=?
+            WHERE id=?
+        """, [
+            record.get("unit_qty"),
+            record.get("kg_per_unit"),
+            record.get("total_kg"),
+            record.get("feed_price_per_kg"),
+            record.get("total_feed_value"),
+            exists[0]
+        ])
+    else:
+        cursor.execute(f"""
+            INSERT INTO feed_stock
+            ({', '.join(fields)})
+            VALUES ({', '.join(['?']*len(fields))})
+        """, values)
+    conn.commit()
+
+def merge_treatment(conn, record):
+    cursor = conn.cursor()
+    # Treatment can be by mob or individual, store in cattle_log table
+    # If nlis_id is present, it's for individual; if mob, for a group
+    now_int = int(time.time())
+    # Required fields: event_date, event_type ('MEDICATION'), product_name, amount, unit, cost_per_unit, notes, mob or nlis_id
+    insert_fields = []
+    insert_values = []
+    for field in ["id", "nlis_id", "event_date", "event_type", "product_name", "amount", "unit", "cost_per_unit", "paddock", "notes", "source", "import_batch", "mob"]:
+        if field in record:
+            insert_fields.append(field)
+            insert_values.append(record[field])
+    if "event_type" not in insert_fields:
+        insert_fields.append("event_type")
+        insert_values.append("MEDICATION")
+    if "id" not in insert_fields:
+        insert_fields.append("id")
+        insert_values.append(str(now_int) + "_" + (record.get("nlis_id") or record.get("mob", "")))
+    sql = f"INSERT OR REPLACE INTO cattle_log ({', '.join(insert_fields)}) VALUES ({', '.join(['?']*len(insert_fields))})"
+    cursor.execute(sql, insert_values)
+    conn.commit()
+
+def merge_paddock(conn, record):
+    cursor = conn.cursor()
+    # Paddock assignments go in herd_paddock_assignments table
+    # Required fields: id, mob, paddock_id, start_date, end_date, estimated_headcount
+    insert_fields = []
+    insert_values = []
+    for field in ["id", "mob", "paddock_id", "start_date", "end_date", "estimated_headcount"]:
+        if field in record:
+            insert_fields.append(field)
+            insert_values.append(record[field])
+    if "id" not in insert_fields:
+        now_int = int(time.time())
+        insert_fields.append("id")
+        insert_values.append(str(now_int) + "_" + record.get("mob", ""))
+    sql = f"INSERT OR REPLACE INTO herd_paddock_assignments ({', '.join(insert_fields)}) VALUES ({', '.join(['?']*len(insert_fields))})"
+    cursor.execute(sql, insert_values)
+    conn.commit()
+
+def process_section(conn, section_name, records):
+    entries_imported = 0
+    errors = []
+    if not isinstance(records, list):
+        errors.append(f"Section {section_name} is not a list.")
+        return entries_imported, errors
+    for record in records:
+        try:
+            if section_name == "animal_updates":
+                upsert_cattle_registry(conn, record)
+            elif section_name == "feed_updates":
+                merge_feed_stock(conn, record)
+            elif section_name == "treatment_update":
+                merge_treatment(conn, record)
+            elif section_name == "paddock_update":
+                merge_paddock(conn, record)
+            else:
+                errors.append(f"Unknown section: {section_name}")
+                continue
+            entries_imported += 1
+        except Exception as e:
+            errors.append(f"{section_name} error: {e}")
+    return entries_imported, errors
+
 def process_file(conn, filepath):
     entries_imported = 0
     errors = []
-
     with open(filepath, "r", encoding="utf-8") as f:
         try:
             data = json.load(f)
         except Exception as e:
-            return 0, f"JSON load error: {e}"
+            return 0, [f"JSON load error: {e}"]
 
-    # Accept both single-dict and list-of-dicts input for flexibility
+    # Accept both the new dict structure and legacy flat list
     if isinstance(data, dict):
-        data = [data]
-    elif not isinstance(data, list):
-        return 0, "JSON file must contain a list or a single object."
+        # Adv structure: process each section independently
+        for section in ["animal_updates", "feed_updates", "treatment_update", "paddock_update"]:
+            if section in data:
+                imported, section_errors = process_section(conn, section, data[section])
+                entries_imported += imported
+                errors.extend(section_errors)
+    elif isinstance(data, list):
+        # Flat structure: try to route based on keys
+        for record in data:
+            try:
+                if "commodity" in record and "feed_type" in record:
+                    merge_feed_stock(conn, record)
+                elif "nlis_id" in record or "nlis_rfid" in record:
+                    upsert_cattle_registry(conn, record)
+                elif "event_type" in record and record["event_type"]=="MEDICATION":
+                    merge_treatment(conn, record)
+                elif "mob" in record and "paddock_id" in record:
+                    merge_paddock(conn, record)
+                else:
+                    errors.append(f"Unknown record type: {record}")
+                    continue
+                entries_imported += 1
+            except Exception as e:
+                errors.append(f"Flat record error: {e}")
+    else:
+        errors.append("JSON file must contain a list or a dict with update sections.")
 
-    for record in data:
-        try:
-            merge_general(conn, record)
-            entries_imported += 1
-        except Exception as e:
-            errors.append(str(e))
-
-    return entries_imported, "\n".join(errors)
+    return entries_imported, errors
 
 def main():
     init_processed_dir()
-
     if not os.path.exists(MASTER_DB):
         print("master.db not found!")
         return
 
     conn = sqlite3.connect(MASTER_DB)
-
     files = [f for f in os.listdir(UPLOAD_DIR) if f.endswith(".json")]
     if not files:
         print("No JSON files to process.")
@@ -119,14 +235,11 @@ def main():
         filepath = os.path.join(UPLOAD_DIR, file)
         print(f"Processing {file} ...")
         imported, error_log = process_file(conn, filepath)
-        log_merge_event(conn, file, imported, error_log)
+        log_merge_event(conn, file, imported, "\n".join(error_log))
         print(f"Imported {imported} entries from {file}")
         if error_log:
             print(f"Errors:\n{error_log}")
-
-        # Move processed file
         shutil.move(filepath, os.path.join(PROCESSED_DIR, file))
-
     conn.close()
 
 if __name__ == "__main__":

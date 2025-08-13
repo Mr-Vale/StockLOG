@@ -2,7 +2,7 @@ import sqlite3
 import os
 
 # Use the actual absolute NAS path (not ~)
-core_dir = "C:\ProgramData\StockLOG\Core"
+core_dir = "/volume1/StockLOG/Core"
 os.makedirs(core_dir, exist_ok=True)
 
 # Path to the master database
@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS cattle_registry (
     sex TEXT,
     mob TEXT,
     purchase_price REAL,
+    animal_value REAL,
     exit_date INTEGER,
     destination TEXT,
     sale_price REAL,
@@ -51,6 +52,18 @@ CREATE TABLE IF NOT EXISTS cattle_log (
     source TEXT,
     import_batch TEXT,
     FOREIGN KEY (nlis_id) REFERENCES cattle_registry(nlis_id)
+);
+
+CREATE TABLE IF NOT EXISTS feed_stock (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    commodity TEXT,
+    feed_type TEXT,
+    unit_qty REAL,
+    kg_per_unit REAL,
+    price_per_unit REAL,
+    total_kg REAL,
+    feed_price_per_kg REAL,
+    total_feed_value REAL
 );
 
 CREATE TABLE IF NOT EXISTS products (

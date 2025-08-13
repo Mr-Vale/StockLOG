@@ -7,6 +7,8 @@ from views.active_cattle import ActiveCattlePage
 from views.cattle_entry import CattleEntryPage
 from views.cattle_exit import CattleExitPage
 from views.cattle_edit import CattleEditPage
+from views.feed_supplies import FeedAndSuppliesPage
+from views.cattle_feed import CattleFeedPage
 
 DATA_DIR = os.path.join(os.environ.get("PROGRAMDATA"), "StockLOG")
 CORE_DIR = os.path.join(DATA_DIR, "Core")
@@ -57,11 +59,15 @@ class StockLogApp(QMainWindow):
         self.cattle_entry_page = CattleEntryPage(self)
         self.cattle_exit_page = CattleExitPage(self)
         self.cattle_edit_page = CattleEditPage(self)
+        self.feed_and_supplies_page = FeedAndSuppliesPage(self)
+        self.cattle_feed_page = CattleFeedPage(self)
 
         self.tabs.addTab(self.active_cattle_page, "Active Cattle")
         self.tabs.addTab(self.cattle_entry_page, "Cattle Entry")
         self.tabs.addTab(self.cattle_exit_page, "Cattle Exit")
         self.tabs.addTab(self.cattle_edit_page, "Cattle Edit")
+        self.tabs.addTab(self.feed_and_supplies_page, "Feed & Supplies")
+        self.tabs.addTab(self.cattle_feed_page, "Cattle Feed")
 
     def refresh_all_tabs(self):
         """
@@ -76,6 +82,9 @@ class StockLogApp(QMainWindow):
             self.cattle_entry_page,
             self.cattle_exit_page,
             self.cattle_edit_page,
+            self.feed_and_supplies_page,
+            self.cattle_feed_page,
+            # self.new_tab_page,            # <--- Add any other new tab here
         ]:
             if hasattr(page, "refresh_data"):
                 page.refresh_data()

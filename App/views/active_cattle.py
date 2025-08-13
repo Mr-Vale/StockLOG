@@ -410,7 +410,6 @@ class ActiveCattlePage(QWidget):
                 QMessageBox.critical(self, "Merge Error", f"Failed to run merge:\n{e}")
         return updates
 
-
     def load_data(self):
         for i in reversed(range(self.mob_layout.count())):
             widget = self.mob_layout.itemAt(i).widget()
@@ -431,7 +430,7 @@ class ActiveCattlePage(QWidget):
         cursor.execute("""
             SELECT 
                 entry_date, nlis_id, nlis_rfid, breed_description,
-                sex, mob, purchase_price
+                sex, mob, purchase_price, animal_value
             FROM cattle_registry
             WHERE LOWER(status) = 'active'
         """)
@@ -451,6 +450,8 @@ class ActiveCattlePage(QWidget):
             entry_date_unix = row[0]
             entry_date_dt = datetime.datetime.fromtimestamp(entry_date_unix)
             purchase_price = row[6] if row[6] else 0.0
+            animal_value = row[7] if row[7] else 0.0
+            total_value = purchase_price + animal_value
 
             age_days = (datetime.datetime.now() - entry_date_dt).days
             age_months = age_days // 30
@@ -483,24 +484,22 @@ class ActiveCattlePage(QWidget):
                 mob_stats[mob] = {"total": 0, "M": 0, "F": 0, "value": 0.0}
             mob_stats[mob]["total"] += 1
             mob_stats[mob][sex] += 1
-            mob_stats[mob]["value"] += purchase_price
+            mob_stats[mob]["value"] += total_value
 
             entry_date_str = entry_date_dt.strftime("%d/%m/%Y")
             safe_sale_dt = entry_date_dt + datetime.timedelta(days=90)
             safe_sale_str = safe_sale_dt.strftime("%d/%m/%Y")
 
-            # Store (datetime object, string) tuple for entry date and safe sale date,
-            # and (int, string) for age
             self.table_data.append([
-                (entry_date_dt, entry_date_str),  # entry date (raw, display)
+                (entry_date_dt, entry_date_str),
                 (row[1] or "").upper(),
                 str(row[2]) if row[2] is not None else "",
                 (row[3] or "").upper(),
                 sex,
                 mob,
-                f"${purchase_price:.2f}",
-                (total_age_months, age_str),      # age (int, display)
-                (safe_sale_dt, safe_sale_str)     # safe sale date (raw, display)
+                f"${total_value:.2f}",            # <-- Total Value (purchase_price + animal_value)
+                (total_age_months, age_str),
+                (safe_sale_dt, safe_sale_str)
             ])
 
         self.model = CattleTableModel(self.table_data, self.table_headers)
@@ -508,15 +507,12 @@ class ActiveCattlePage(QWidget):
         self.table_view.setModel(self.proxy_model)
         
         header = self.table_view.horizontalHeader()
-        # 1. Auto-resize to contents for all columns
         for col in range(self.model.columnCount()):
             header.setSectionResizeMode(col, QHeaderView.ResizeToContents)
-        # 2. Switch to Interactive so the user can resize after
-        QApplication.processEvents()  # Ensure the view updates first!
+        QApplication.processEvents()
         for col in range(self.model.columnCount()):
             header.setSectionResizeMode(col, QHeaderView.Interactive)
         
-
         def bold(text):
             return f"<b>{text}</b>"
 
