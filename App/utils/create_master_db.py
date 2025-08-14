@@ -101,6 +101,46 @@ CREATE TABLE IF NOT EXISTS merge_log (
     error_log TEXT
 );
 
+-- Veterinary Chemical Inventory
+CREATE TABLE IF NOT EXISTS chemical_inventory (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date_received INTEGER,
+    product_name TEXT,
+    form TEXT,
+    unit TEXT,
+    package_size REAL,
+    package_type TEXT,
+    quantity REAL,
+    total_quantity REAL,
+    price_per_unit REAL,
+    total_value REAL,
+    batch_number TEXT,
+    expiry_date INTEGER,
+    dom_date INTEGER,
+    application_type TEXT,
+    withholding_period INTEGER,
+    notes TEXT,
+    last_updated INTEGER,
+    created_at INTEGER
+);
+
+-- Chemical Usage Log
+CREATE TABLE IF NOT EXISTS chemical_log (
+    id TEXT PRIMARY KEY,
+    event_date INTEGER,
+    product_name TEXT,
+    batch_number TEXT,
+    amount_used REAL,
+    unit TEXT,
+    price_per_unit REAL,
+    value_applied REAL,
+    application_type TEXT,
+    mob TEXT,
+    nlis_id TEXT,
+    notes TEXT,
+    last_updated INTEGER
+);
+
 """)
 
 # Commit and close

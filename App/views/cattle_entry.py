@@ -296,11 +296,7 @@ class CattleEntryPage(QWidget):
         self.mob.clear()
         self.mob.addItems(mob_list)
         self.mob.setCurrentText("")
-        # Optionally clear queued entries and table (uncomment if you want this)
-        # self.clear_queue()
-        # Clear the form fields
         self.clear_fields()
-
 
     def _force_uppercase_textedit(self, textedit):
         cursor = textedit.textCursor()
@@ -336,6 +332,7 @@ class CattleEntryPage(QWidget):
             if self.duplicate_in_master_or_queue(entry["nlis_id"], entry["nlis_rfid"]):
                 raise ValueError("NLIS ID or NLIS RFID already exists in the master database or queued entries.\n"
                                  "This animal entry cannot be queued.")
+            entry["status"] = "ACTIVE"  # Set status to ACTIVE by default
             self.presubmit_entries.append(entry)
             self.add_entry_to_table(entry)
             self.clear_fields()
@@ -355,6 +352,7 @@ class CattleEntryPage(QWidget):
             'sex': self.sex.currentText().strip(),
             'mob': self.mob.currentText().strip(),
             'purchase_price': self.purchase_price.text().strip(),
+            # 'status': 'ACTIVE'  # Don't set here, set in add_entry for clarity
         }
         return entry
 
@@ -575,7 +573,8 @@ class CattleEntryPage(QWidget):
                     "breed_description": breed_desc,
                     "sex": sex,
                     "mob": mob,
-                    "purchase_price": 0.0
+                    "purchase_price": 0.0,
+                    "status": "ACTIVE"  # Set status to ACTIVE by default for bulk
                 }
                 self.presubmit_entries.append(entry)
                 self.add_entry_to_table(entry)

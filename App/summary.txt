@@ -1,0 +1,59 @@
+# StockLOG Project Summary
+
+## Overview
+StockLOG is a comprehensive desktop application for managing cattle operations, feed stocks, and related data. Built in Python using PyQt5 for the GUI and SQLite for local data persistence, StockLOG allows users to track animal records, feed inventories, feeding events, mob movements, medication/treatments, and paddock assignments, all within an integrated tabbed interface.
+
+## Key Features
+
+### 1. **Animal Management**
+- **Active Cattle:** View a searchable/sortable table of all active cattle, showing entry date, NLIS ID/RFID, breed, sex, mob, and *Total Value* (purchase price + animal value).
+- **Cattle Entry:** Add individual or bulk cattle entries, ensuring duplicate NLIS ID/RFID are rejected. Supports importing from CSV for bulk entry.
+- **Cattle Exit:** Record exits for individual or bulk animals, including sale details and destination. Status is automatically updated to "INACTIVE" if the exit date has passed.
+- **Cattle Edit:** Edit all fields for existing animals, including mob, price, dates, and status. Supports mob reassignment for groups.
+
+### 2. **Feed and Supplies Management**
+- **Feed & Supplies:** Manage all feed commodities (hay, grain, milk powder, supplements), with calculated fields for unit quantity, total kg, $/unit, $/kg, and *Total Feed Value*. Add, edit or remove commodities with live calculations.
+- **Cattle Feed:** Feed mobs from stock, queue multiple feed events, and submit in batch. Enforces validation to prevent over-feeding (aggregates queued quantities), detects duplicates, and automatically updates feed stock quantities, total kg, and values according to the type of feed.
+    - Special logic for milk powder: feeding is entered in kg/head and automatically multiplied by the mob size.
+    - Grain and milk powder deplete both total kg and unit quantity based on kg per unit.
+    - Hay depletes unit bales, total kg, and value.
+
+### 3. **Paddock and Treatment Tracking**
+- **Paddock Assignments:** Assign mobs to paddocks with dates and estimated headcount.
+- **Medication/Treatment Events:** Record treatments for individuals or mobs, including product, amount, and notes.
+
+### 4. **Data Integrity and Synchronization**
+- **Merge Script:** A background process ("merge_uploads.py") processes all queued JSON updates, applies them to the master database, and logs each merge event.
+- **Status Checks:** Each time the app or relevant page is refreshed, animals with exit dates in the past are automatically marked as "INACTIVE".
+- **Global Refresh:** A "Refresh All" button refreshes all tabs and triggers status checks. After each merge, all tabs/pages auto-refresh to ensure the UI shows the latest data.
+
+### 5. **Reporting and Export**
+- Export all tables and summaries (cattle, mob, feed) to CSV.
+- Print-friendly views for all major tables.
+
+## Technology Stack
+- **Python 3**: Application logic and scripting.
+- **PyQt5**: Cross-platform GUI framework.
+- **SQLite**: Local database storage.
+- **JSON**: Used for upload queue, batch operations, and logs.
+- **CSV**: Bulk import/export support.
+
+## Workflow
+1. **User Queues Entries/Edits:** Data is entered in the UI and queued as JSON files.
+2. **Merge Script Runs:** Processes queued files, updates the SQLite master database, and moves processed files.
+3. **UI Refreshes:** After each merge, the app auto-refreshes all tabs to display current data.
+4. **Validation:** Prevents duplicate entries, overfeeding, and ensures all calculations are correct before submission.
+
+## Extensibility
+- Code is modular: Each tab/page is a separate Python class.
+- Easy to add new tabs (e.g., for reporting, paddocks, treatments).
+- Merge script is extensible to support new data types.
+
+## Current Status
+- Fully functional for cattle, feed, mob, and basic paddock/treatment management.
+- All major forms and tables are implemented with validation and live updates.
+- Ready for further extension (e.g., medication logs, advanced reporting, network sync).
+
+---
+
+**StockLOG provides a robust, local-first solution for managing all aspects of cattle, feed, and operations in a streamlined, user-friendly interface, with strong validation and full audit trails.**

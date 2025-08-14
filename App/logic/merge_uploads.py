@@ -117,10 +117,7 @@ def merge_feed_stock(conn, record):
 
 def merge_treatment(conn, record):
     cursor = conn.cursor()
-    # Treatment can be by mob or individual, store in cattle_log table
-    # If nlis_id is present, it's for individual; if mob, for a group
     now_int = int(time.time())
-    # Required fields: event_date, event_type ('MEDICATION'), product_name, amount, unit, cost_per_unit, notes, mob or nlis_id
     insert_fields = []
     insert_values = []
     for field in ["id", "nlis_id", "event_date", "event_type", "product_name", "amount", "unit", "cost_per_unit", "paddock", "notes", "source", "import_batch", "mob"]:
@@ -139,8 +136,6 @@ def merge_treatment(conn, record):
 
 def merge_paddock(conn, record):
     cursor = conn.cursor()
-    # Paddock assignments go in herd_paddock_assignments table
-    # Required fields: id, mob, paddock_id, start_date, end_date, estimated_headcount
     insert_fields = []
     insert_values = []
     for field in ["id", "mob", "paddock_id", "start_date", "end_date", "estimated_headcount"]:
@@ -153,6 +148,36 @@ def merge_paddock(conn, record):
         insert_values.append(str(now_int) + "_" + record.get("mob", ""))
     sql = f"INSERT OR REPLACE INTO herd_paddock_assignments ({', '.join(insert_fields)}) VALUES ({', '.join(['?']*len(insert_fields))})"
     cursor.execute(sql, insert_values)
+    conn.commit()
+
+def merge_chemical_inventory(conn, record):
+    cursor = conn.cursor()
+    now_int = int(time.time())
+    # Try to find a product by product_name and batch_number
+    cursor.execute("SELECT id FROM chemical_inventory WHERE product_name=? AND batch_number=?", (record.get("product_name", ""), record.get("batch_number", "")))
+    exists = cursor.fetchone()
+    fields = [
+        "date_received", "product_name", "form", "unit", "package_size", "package_type",
+        "quantity", "total_quantity", "price_per_unit", "total_value",
+        "batch_number", "expiry_date", "dom_date", "application_type", "withholding_period", "notes", "last_updated", "created_at"
+    ]
+    values = [record.get(f) for f in fields]
+    # Set last_updated and created_at if not present
+    if not record.get("last_updated"):
+        values[fields.index("last_updated")] = now_int
+    if not record.get("created_at"):
+        values[fields.index("created_at")] = now_int
+    if exists:
+        set_fields = [f"{f}=?" for f in fields if f not in ["created_at"]]
+        set_values = [record.get(f) if record.get(f) is not None else (now_int if f=="last_updated" else None) for f in fields if f != "created_at"]
+        set_values.append(exists[0])
+        cursor.execute(
+            f"UPDATE chemical_inventory SET {', '.join(set_fields)} WHERE id=?",
+            set_values)
+    else:
+        cursor.execute(
+            f"INSERT INTO chemical_inventory ({', '.join(fields)}) VALUES ({', '.join(['?']*len(fields))})",
+            values)
     conn.commit()
 
 def process_section(conn, section_name, records):
@@ -171,6 +196,8 @@ def process_section(conn, section_name, records):
                 merge_treatment(conn, record)
             elif section_name == "paddock_update":
                 merge_paddock(conn, record)
+            elif section_name == "chemical_inventory":
+                merge_chemical_inventory(conn, record)
             else:
                 errors.append(f"Unknown section: {section_name}")
                 continue
@@ -191,16 +218,23 @@ def process_file(conn, filepath):
     # Accept both the new dict structure and legacy flat list
     if isinstance(data, dict):
         # Adv structure: process each section independently
-        for section in ["animal_updates", "feed_updates", "treatment_update", "paddock_update"]:
+        for section in ["animal_updates", "feed_updates", "treatment_update", "paddock_update", "chemical_inventory"]:
             if section in data:
                 imported, section_errors = process_section(conn, section, data[section])
                 entries_imported += imported
                 errors.extend(section_errors)
     elif isinstance(data, list):
-        # Flat structure: try to route based on keys
         for record in data:
             try:
-                if "commodity" in record and "feed_type" in record:
+                # Chemical inventory detection
+                chem_keys = set([
+                    "date_received", "product_name", "form", "unit", "package_size", "package_type",
+                    "quantity", "total_quantity", "price_per_unit", "total_value",
+                    "batch_number", "expiry_date", "dom_date", "application_type", "withholding_period", "notes"
+                ])
+                if chem_keys.issubset(set(record.keys())):
+                    merge_chemical_inventory(conn, record)
+                elif "commodity" in record and "feed_type" in record:
                     merge_feed_stock(conn, record)
                 elif "nlis_id" in record or "nlis_rfid" in record:
                     upsert_cattle_registry(conn, record)
