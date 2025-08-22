@@ -9,7 +9,8 @@ from views.cattle_exit import CattleExitPage
 from views.cattle_edit import CattleEditPage
 from views.feed_supplies import FeedAndSuppliesPage
 from views.cattle_feed import CattleFeedPage
-from views.chem_inventory import ChemInventoryPage  # <-- NEW TAB IMPORT
+from views.chem_inventory import ChemInventoryPage
+from views.chem_treatment import ChemTreatmentPage
 
 DATA_DIR = os.path.join(os.environ.get("PROGRAMDATA"), "StockLOG")
 CORE_DIR = os.path.join(DATA_DIR, "Core")
@@ -62,7 +63,8 @@ class StockLogApp(QMainWindow):
         self.cattle_edit_page = CattleEditPage(self)
         self.feed_and_supplies_page = FeedAndSuppliesPage(self)
         self.cattle_feed_page = CattleFeedPage(self)
-        self.chem_inventory_page = ChemInventoryPage(self)  # <-- NEW TAB INSTANCE
+        self.chem_inventory_page = ChemInventoryPage(self)
+        self.chem_treatment_page = ChemTreatmentPage(self)
 
         self.tabs.addTab(self.active_cattle_page, "Active Cattle")
         self.tabs.addTab(self.cattle_entry_page, "Cattle Entry")
@@ -70,7 +72,8 @@ class StockLogApp(QMainWindow):
         self.tabs.addTab(self.cattle_edit_page, "Cattle Edit")
         self.tabs.addTab(self.feed_and_supplies_page, "Feed and Supplies")
         self.tabs.addTab(self.cattle_feed_page, "Cattle Feed")
-        self.tabs.addTab(self.chem_inventory_page, "Chemical Inventory")  # <-- NEW TAB
+        self.tabs.addTab(self.chem_inventory_page, "Chemical Inventory")
+        self.tabs.addTab(self.chem_treatment_page, "Treatment")
 
     def refresh_all_tabs(self):
         """

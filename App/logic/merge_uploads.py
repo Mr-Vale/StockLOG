@@ -180,6 +180,28 @@ def merge_chemical_inventory(conn, record):
             values)
     conn.commit()
 
+def merge_chemical_log(conn, record):
+    cursor = conn.cursor()
+    now_int = int(time.time())
+    insert_fields = []
+    insert_values = []
+    for field in [
+        "id", "event_date", "product_name", "batch_number", "amount_used", "unit",
+        "price_per_unit", "value_applied", "application_type", "mob", "nlis_id", "notes", "last_updated"
+    ]:
+        if field in record:
+            insert_fields.append(field)
+            insert_values.append(record[field])
+    if "id" not in insert_fields:
+        insert_fields.append("id")
+        insert_values.append(str(now_int) + "_" + (record.get("mob") or record.get("nlis_id", "")))
+    if "event_date" not in insert_fields:
+        insert_fields.append("event_date")
+        insert_values.append(now_int)
+    sql = f"INSERT OR REPLACE INTO chemical_log ({', '.join(insert_fields)}) VALUES ({', '.join(['?']*len(insert_fields))})"
+    cursor.execute(sql, insert_values)
+    conn.commit()
+
 def process_section(conn, section_name, records):
     entries_imported = 0
     errors = []
@@ -198,6 +220,8 @@ def process_section(conn, section_name, records):
                 merge_paddock(conn, record)
             elif section_name == "chemical_inventory":
                 merge_chemical_inventory(conn, record)
+            elif section_name == "chemical_log":
+                merge_chemical_log(conn, record)
             else:
                 errors.append(f"Unknown section: {section_name}")
                 continue
@@ -217,8 +241,10 @@ def process_file(conn, filepath):
 
     # Accept both the new dict structure and legacy flat list
     if isinstance(data, dict):
-        # Adv structure: process each section independently
-        for section in ["animal_updates", "feed_updates", "treatment_update", "paddock_update", "chemical_inventory"]:
+        for section in [
+            "animal_updates", "feed_updates", "treatment_update",
+            "paddock_update", "chemical_inventory", "chemical_log"
+        ]:
             if section in data:
                 imported, section_errors = process_section(conn, section, data[section])
                 entries_imported += imported
@@ -226,19 +252,24 @@ def process_file(conn, filepath):
     elif isinstance(data, list):
         for record in data:
             try:
-                # Chemical inventory detection
                 chem_keys = set([
                     "date_received", "product_name", "form", "unit", "package_size", "package_type",
                     "quantity", "total_quantity", "price_per_unit", "total_value",
                     "batch_number", "expiry_date", "dom_date", "application_type", "withholding_period", "notes"
                 ])
+                chemical_log_keys = set([
+                    "event_date", "product_name", "batch_number", "amount_used", "unit",
+                    "price_per_unit", "value_applied", "application_type", "mob", "nlis_id", "notes"
+                ])
                 if chem_keys.issubset(set(record.keys())):
                     merge_chemical_inventory(conn, record)
+                elif chemical_log_keys & set(record.keys()):
+                    merge_chemical_log(conn, record)
                 elif "commodity" in record and "feed_type" in record:
                     merge_feed_stock(conn, record)
                 elif "nlis_id" in record or "nlis_rfid" in record:
                     upsert_cattle_registry(conn, record)
-                elif "event_type" in record and record["event_type"]=="MEDICATION":
+                elif "event_type" in record and record["event_type"] in ("MEDICATION", "TREATMENT"):
                     merge_treatment(conn, record)
                 elif "mob" in record and "paddock_id" in record:
                     merge_paddock(conn, record)
