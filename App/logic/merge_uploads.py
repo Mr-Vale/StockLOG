@@ -115,44 +115,18 @@ def merge_feed_stock(conn, record):
         """, values)
     conn.commit()
 
-def merge_treatment(conn, record):
-    cursor = conn.cursor()
-    now_int = int(time.time())
-    insert_fields = []
-    insert_values = []
-    for field in ["id", "nlis_id", "event_date", "event_type", "product_name", "amount", "unit", "cost_per_unit", "paddock", "notes", "source", "import_batch", "mob"]:
-        if field in record:
-            insert_fields.append(field)
-            insert_values.append(record[field])
-    if "event_type" not in insert_fields:
-        insert_fields.append("event_type")
-        insert_values.append("MEDICATION")
-    if "id" not in insert_fields:
-        insert_fields.append("id")
-        insert_values.append(str(now_int) + "_" + (record.get("nlis_id") or record.get("mob", "")))
-    sql = f"INSERT OR REPLACE INTO cattle_log ({', '.join(insert_fields)}) VALUES ({', '.join(['?']*len(insert_fields))})"
-    cursor.execute(sql, insert_values)
-    conn.commit()
-
-def merge_paddock(conn, record):
-    cursor = conn.cursor()
-    insert_fields = []
-    insert_values = []
-    for field in ["id", "mob", "paddock_id", "start_date", "end_date", "estimated_headcount"]:
-        if field in record:
-            insert_fields.append(field)
-            insert_values.append(record[field])
-    if "id" not in insert_fields:
-        now_int = int(time.time())
-        insert_fields.append("id")
-        insert_values.append(str(now_int) + "_" + record.get("mob", ""))
-    sql = f"INSERT OR REPLACE INTO herd_paddock_assignments ({', '.join(insert_fields)}) VALUES ({', '.join(['?']*len(insert_fields))})"
-    cursor.execute(sql, insert_values)
-    conn.commit()
-
 def merge_chemical_inventory(conn, record):
     cursor = conn.cursor()
     now_int = int(time.time())
+    # Remove mode for chemical inventory
+    if record.get("remove") and record.get("product_name"):
+        cursor.execute(
+            "DELETE FROM chemical_inventory WHERE UPPER(product_name)=?",
+            (record.get("product_name").upper(),)
+        )
+        conn.commit()
+        return
+
     # Try to find a product by product_name and batch_number
     cursor.execute("SELECT id FROM chemical_inventory WHERE product_name=? AND batch_number=?", (record.get("product_name", ""), record.get("batch_number", "")))
     exists = cursor.fetchone()
@@ -199,6 +173,41 @@ def merge_chemical_log(conn, record):
         insert_fields.append("event_date")
         insert_values.append(now_int)
     sql = f"INSERT OR REPLACE INTO chemical_log ({', '.join(insert_fields)}) VALUES ({', '.join(['?']*len(insert_fields))})"
+    cursor.execute(sql, insert_values)
+    conn.commit()
+
+def merge_treatment(conn, record):
+    cursor = conn.cursor()
+    now_int = int(time.time())
+    insert_fields = []
+    insert_values = []
+    for field in ["id", "nlis_id", "event_date", "event_type", "product_name", "amount", "unit", "cost_per_unit", "paddock", "notes", "source", "import_batch", "mob"]:
+        if field in record:
+            insert_fields.append(field)
+            insert_values.append(record[field])
+    if "event_type" not in insert_fields:
+        insert_fields.append("event_type")
+        insert_values.append("MEDICATION")
+    if "id" not in insert_fields:
+        insert_fields.append("id")
+        insert_values.append(str(now_int) + "_" + (record.get("nlis_id") or record.get("mob", "")))
+    sql = f"INSERT OR REPLACE INTO cattle_log ({', '.join(insert_fields)}) VALUES ({', '.join(['?']*len(insert_fields))})"
+    cursor.execute(sql, insert_values)
+    conn.commit()
+
+def merge_paddock(conn, record):
+    cursor = conn.cursor()
+    insert_fields = []
+    insert_values = []
+    for field in ["id", "mob", "paddock_id", "start_date", "end_date", "estimated_headcount"]:
+        if field in record:
+            insert_fields.append(field)
+            insert_values.append(record[field])
+    if "id" not in insert_fields:
+        now_int = int(time.time())
+        insert_fields.append("id")
+        insert_values.append(str(now_int) + "_" + record.get("mob", ""))
+    sql = f"INSERT OR REPLACE INTO herd_paddock_assignments ({', '.join(insert_fields)}) VALUES ({', '.join(['?']*len(insert_fields))})"
     cursor.execute(sql, insert_values)
     conn.commit()
 
@@ -252,6 +261,12 @@ def process_file(conn, filepath):
     elif isinstance(data, list):
         for record in data:
             try:
+                # Remove mode for chemical inventory
+                if record.get("remove") and record.get("product_name"):
+                    merge_chemical_inventory(conn, record)
+                    entries_imported += 1
+                    continue
+
                 chem_keys = set([
                     "date_received", "product_name", "form", "unit", "package_size", "package_type",
                     "quantity", "total_quantity", "price_per_unit", "total_value",

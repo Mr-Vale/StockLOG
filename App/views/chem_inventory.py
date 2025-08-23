@@ -12,8 +12,6 @@ from PyQt5.QtWidgets import (
     QDialogButtonBox, QMessageBox, QFileDialog
 )
 from PyQt5.QtCore import Qt, QDate
-from PyQt5.QtPrintSupport import QPrinter, QPrintDialog
-from PyQt5.QtGui import QPainter, QPageLayout
 
 DATA_DIR = r"C:\ProgramData\StockLOG"
 DB_PATH = os.path.join(DATA_DIR, "Core", "master.db")
@@ -26,84 +24,77 @@ TABLE_COLUMNS = [
     "batch_number", "expiry_date", "dom_date", "application_type", "withholding_period", "notes"
 ]
 
+def force_upper(s):
+    return s.upper() if isinstance(s, str) else s
+
+def is_positive_number(s):
+    try:
+        val = float(s)
+        return val > 0
+    except Exception:
+        return False
+
 class ChemicalDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, products_data, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Add/Edit Chemical Product")
+        self.products_data = products_data
         layout = QFormLayout(self)
 
-        # Date received
-        self.date_received = QDateEdit()
-        self.date_received.setCalendarPopup(True)
-        self.date_received.setDisplayFormat("yyyy-MM-dd")
-        self.date_received.setDate(QDate.currentDate())
-        layout.addRow("Date Received", self.date_received)
+        self.product_combo = QComboBox()
+        self.product_combo.setEditable(True)
+        self.product_combo.addItems([""] + [p for p in products_data])
+        self.product_combo.setInsertPolicy(QComboBox.NoInsert)
+        self.product_combo.currentTextChanged.connect(self.prefill_fields)
+        layout.addRow("Product Name", self.product_combo)
 
-        # Product name
-        self.product_name = QLineEdit()
-        self.product_name.setPlaceholderText("Product name")
-        layout.addRow("Product Name", self.product_name)
-
-        # Form
         self.form_combo = QComboBox()
-        self.form_combo.addItems(["LIQUID", "POWDER", "TABLET", "AEROSOL", "OTHER"])
+        self.form_combo.addItems(["LIQUID", "POWDER", "TABLET", "AEROSOL"])
+        self.form_combo.currentTextChanged.connect(self.update_unit_and_package)
         layout.addRow("Form", self.form_combo)
 
-        # Unit
-        self.unit = QLineEdit()
-        self.unit.setPlaceholderText("Unit (e.g. L, mL, g, tablet, can)")
-        layout.addRow("Unit", self.unit)
+        self.unit_combo = QComboBox()
+        layout.addRow("Unit", self.unit_combo)
 
-        # Package size
+        self.package_type_combo = QComboBox()
+        layout.addRow("Package Type", self.package_type_combo)
+
         self.package_size = QLineEdit()
-        self.package_size.setPlaceholderText("Package Size (e.g. 20 for 20L)")
+        self.package_size.setPlaceholderText("Size per package")
         layout.addRow("Package Size", self.package_size)
 
-        # Package type
-        self.package_type = QLineEdit()
-        self.package_type.setPlaceholderText("Package Type (e.g. drum, vial, can, box)")
-        layout.addRow("Package Type", self.package_type)
-
-        # Quantity
         self.quantity = QLineEdit()
-        self.quantity.setPlaceholderText("Number of packages")
+        self.quantity.setPlaceholderText("Number of packages/tablets/cans")
         layout.addRow("Quantity", self.quantity)
 
-        # Price per unit
-        self.price_per_unit = QLineEdit()
-        self.price_per_unit.setPlaceholderText("Price per unit (e.g. $/mL, $/tablet)")
-        layout.addRow("Price per Unit", self.price_per_unit)
-
-        # Batch number
         self.batch_number = QLineEdit()
-        self.batch_number.setPlaceholderText("Batch number")
         layout.addRow("Batch Number", self.batch_number)
 
-        # Expiry date
+        self.price_per_package = QLineEdit()
+        self.price_per_package.setPlaceholderText("Price per package")
+        layout.addRow("Price per Package", self.price_per_package)
+
+        self.price_per_unit_display = QLabel("-")
+        layout.addRow("Calculated Price per Unit", self.price_per_unit_display)
+
         self.expiry_date = QDateEdit()
         self.expiry_date.setCalendarPopup(True)
-        self.expiry_date.setDisplayFormat("yyyy-MM-dd")
         self.expiry_date.setDate(QDate.currentDate())
         layout.addRow("Expiry Date", self.expiry_date)
 
-        # Date of manufacture
         self.dom_date = QDateEdit()
         self.dom_date.setCalendarPopup(True)
-        self.dom_date.setDisplayFormat("yyyy-MM-dd")
         self.dom_date.setDate(QDate.currentDate())
         layout.addRow("Date of Manufacture", self.dom_date)
 
-        # Application type
         self.application_type = QComboBox()
         self.application_type.addItems(["INDIVIDUAL", "MOB"])
         layout.addRow("Application Type", self.application_type)
 
-        # Withholding period
         self.withholding_period = QLineEdit()
         self.withholding_period.setPlaceholderText("Withholding period (days)")
         layout.addRow("Withholding Period (days)", self.withholding_period)
 
-        # Notes
         self.notes = QLineEdit()
         self.notes.setPlaceholderText("Notes")
         layout.addRow("Notes", self.notes)
@@ -112,84 +103,203 @@ class ChemicalDialog(QDialog):
         self.buttons.accepted.connect(self._ok_clicked)
         self.buttons.rejected.connect(self.reject)
         layout.addRow(self.buttons)
-
         self.setLayout(layout)
 
+        self.update_unit_and_package()
+
+        # Force uppercase on all QLineEdit fields
+        for field in [self.batch_number, self.package_size, self.quantity, self.price_per_package, self.withholding_period, self.notes]:
+            field.textChanged.connect(lambda text, fld=field: fld.setText(force_upper(text)))
+
+    def prefill_fields(self, name):
+        name = force_upper(name)
+        if name in self.products_data:
+            d = self.products_data[name]
+            self.form_combo.setCurrentText(force_upper(d['form']))
+            self.update_unit_and_package()
+            self.unit_combo.setCurrentText(force_upper(d['unit']))
+            self.package_type_combo.setCurrentText(force_upper(d['package_type']))
+            # Liquid: convert package_size to ml for UI if needed
+            if force_upper(d['form']) == "LIQUID" and force_upper(d['unit']) == "ML":
+                self.package_size.setText(str(float(d['package_size']) * 1000))
+            else:
+                self.package_size.setText(str(float(d['package_size'])))
+            # Powder: convert package_size to g for UI if needed
+            if force_upper(d['form']) == "POWDER" and force_upper(d['unit']) == "G":
+                self.package_size.setText(str(float(d['package_size']) * 1000))
+            self.quantity.setText(str(float(d['quantity'])))
+            self.batch_number.setText(force_upper(d['batch_number']))
+            self.price_per_package.setText(str(float(d['total_value'])))
+            try:
+                expiry_dt = datetime.datetime.fromtimestamp(float(d['expiry_date']))
+                self.expiry_date.setDate(QDate(expiry_dt.year, expiry_dt.month, expiry_dt.day))
+            except Exception:
+                self.expiry_date.setDate(QDate.currentDate())
+            try:
+                dom_dt = datetime.datetime.fromtimestamp(float(d['dom_date']))
+                self.dom_date.setDate(QDate(dom_dt.year, dom_dt.month, dom_dt.day))
+            except Exception:
+                self.dom_date.setDate(QDate.currentDate())
+            self.application_type.setCurrentText(force_upper(d['application_type']))
+            self.withholding_period.setText(str(float(d['withholding_period'])))
+            self.notes.setText(force_upper(d['notes']))
+            self.update_price_per_unit()
+        else:
+            self.clear_fields()
+
+    def clear_fields(self):
+        self.form_combo.setCurrentIndex(0)
+        self.unit_combo.setCurrentIndex(0)
+        self.package_type_combo.setCurrentIndex(0)
+        self.package_size.clear()
+        self.quantity.clear()
+        self.batch_number.clear()
+        self.price_per_package.clear()
+        self.expiry_date.setDate(QDate.currentDate())
+        self.dom_date.setDate(QDate.currentDate())
+        self.application_type.setCurrentIndex(0)
+        self.withholding_period.clear()
+        self.notes.clear()
+        self.price_per_unit_display.setText("-")
+
+    def update_unit_and_package(self):
+        form = self.form_combo.currentText()
+        self.unit_combo.clear()
+        self.package_type_combo.clear()
+        self.package_size.setEnabled(True)
+        if form == "LIQUID":
+            self.unit_combo.addItems(["ml", "L"])
+            self.package_type_combo.addItems(["DRUM", "BOTTLE", "VIAL"])
+        elif form == "POWDER":
+            self.unit_combo.addItems(["g", "Kg"])
+            self.package_type_combo.addItems(["BAG", "BOX", "BOTTLE"])
+        elif form == "TABLET":
+            self.unit_combo.addItem("Tablet")
+            self.package_type_combo.addItems(["BOX", "BOTTLE"])
+        elif form == "AEROSOL":
+            self.unit_combo.addItem("ml")
+            self.package_type_combo.addItems(["CAN", "BOX"])
+        self.update_price_per_unit()
+
+    def update_price_per_unit(self):
+        try:
+            form = self.form_combo.currentText()
+            unit = self.unit_combo.currentText()
+            package_type = self.package_type_combo.currentText()
+            price_per_package = float(self.price_per_package.text()) if is_positive_number(self.price_per_package.text()) else 0.0
+            package_size = float(self.package_size.text()) if is_positive_number(self.package_size.text()) else 0.0
+            quantity = float(self.quantity.text()) if is_positive_number(self.quantity.text()) else 0.0
+            if form == "AEROSOL" and package_type == "CAN":
+                package_size = 1.0
+            if form == "LIQUID":
+                package_size_l = package_size / 1000.0 if unit == "ml" else package_size
+                total_l = package_size_l * quantity
+                if unit == "ml":
+                    price_per_unit = price_per_package / (total_l * 1000) if total_l > 0 else 0
+                    self.price_per_unit_display.setText(f"${price_per_unit:.2f} per ml")
+                else:
+                    price_per_unit = price_per_package / total_l if total_l > 0 else 0
+                    self.price_per_unit_display.setText(f"${price_per_unit:.2f} per L")
+            elif form == "POWDER":
+                package_size_kg = package_size / 1000.0 if unit == "g" else package_size
+                total_kg = package_size_kg * quantity
+                if unit == "g":
+                    price_per_unit = price_per_package / (total_kg * 1000) if total_kg > 0 else 0
+                    self.price_per_unit_display.setText(f"${price_per_unit:.2f} per g")
+                else:
+                    price_per_unit = price_per_package / total_kg if total_kg > 0 else 0
+                    self.price_per_unit_display.setText(f"${price_per_unit:.2f} per Kg")
+            elif form == "TABLET":
+                total_tablets = package_size * quantity
+                price_per_unit = price_per_package / total_tablets if total_tablets > 0 else 0
+                self.price_per_unit_display.setText(f"${price_per_unit:.2f} per Tablet")
+            elif form == "AEROSOL":
+                package_size_l = package_size / 1000.0
+                total_l = package_size_l * quantity
+                price_per_unit = price_per_package / (total_l * 1000) if total_l > 0 else 0
+                self.price_per_unit_display.setText(f"${price_per_unit:.2f} per ml (stored as L)")
+        except Exception:
+            self.price_per_unit_display.setText("-")
+
     def _ok_clicked(self):
-        # Basic validation
-        if not self.product_name.text().strip():
-            QMessageBox.warning(self, "Missing Field", "Product name is required.")
-            return
-        if not self.unit.text().strip():
-            QMessageBox.warning(self, "Missing Field", "Unit is required.")
-            return
-        if not self.package_size.text().strip():
-            QMessageBox.warning(self, "Missing Field", "Package size is required.")
-            return
-        if not self.package_type.text().strip():
-            QMessageBox.warning(self, "Missing Field", "Package type is required.")
-            return
-        if not self.quantity.text().strip():
-            QMessageBox.warning(self, "Missing Field", "Quantity is required.")
-            return
-        if not self.price_per_unit.text().strip():
-            QMessageBox.warning(self, "Missing Field", "Price per unit is required.")
-            return
+        errors = []
+        if not self.product_combo.currentText().strip():
+            errors.append("Product name is required.")
         if not self.batch_number.text().strip():
-            QMessageBox.warning(self, "Missing Field", "Batch number is required.")
-            return
-        if not self.withholding_period.text().strip():
-            QMessageBox.warning(self, "Missing Field", "Withholding period is required.")
+            errors.append("Batch number is required.")
+        if not is_positive_number(self.package_size.text()):
+            errors.append("Package size must be a positive number.")
+        if not is_positive_number(self.quantity.text()):
+            errors.append("Quantity must be a positive number.")
+        if not is_positive_number(self.price_per_package.text()):
+            errors.append("Price per package must be a positive number.")
+        if errors:
+            QMessageBox.warning(self, "Validation Error", "\n".join(errors))
             return
         self.accept()
 
     def get_final_values(self):
-        # Safe conversion for all date fields
-        dt_received = self.date_received.date().toPyDate()
-        date_received = int(datetime.datetime(dt_received.year, dt_received.month, dt_received.day).timestamp())
-
-        dt_expiry = self.expiry_date.date().toPyDate()
-        expiry_date = int(datetime.datetime(dt_expiry.year, dt_expiry.month, dt_expiry.day).timestamp())
-
-        dt_dom = self.dom_date.date().toPyDate()
-        dom_date = int(datetime.datetime(dt_dom.year, dt_dom.month, dt_dom.day).timestamp())
-
-        try:
-            package_size = float(self.package_size.text())
-        except Exception:
-            package_size = 0.0
-        try:
-            quantity = float(self.quantity.text())
-        except Exception:
-            quantity = 0.0
-        try:
-            price_per_unit = float(self.price_per_unit.text())
-        except Exception:
-            price_per_unit = 0.0
-        try:
-            withholding_period = int(self.withholding_period.text())
-        except Exception:
-            withholding_period = 0
-        total_quantity = package_size * quantity
-        total_value = total_quantity * price_per_unit
-
+        form = self.form_combo.currentText()
+        unit = self.unit_combo.currentText()
+        package_type = self.package_type_combo.currentText()
+        price_per_package = float(self.price_per_package.text()) if is_positive_number(self.price_per_package.text()) else 0.0
+        package_size = float(self.package_size.text()) if is_positive_number(self.package_size.text()) else 0.0
+        quantity = float(self.quantity.text()) if is_positive_number(self.quantity.text()) else 0.0
+        if form == "AEROSOL" and package_type == "CAN":
+            package_size = 1.0
+        product_name = force_upper(self.product_combo.currentText())
+        batch_number = force_upper(self.batch_number.text())
+        notes = force_upper(self.notes.text())
+        withholding_period = float(self.withholding_period.text()) if is_positive_number(self.withholding_period.text()) else 0.0
+        expiry_date = self.expiry_date.date().toPyDate()
+        expiry_date_int = int(datetime.datetime(expiry_date.year, expiry_date.month, expiry_date.day).timestamp())
+        dom_date = self.dom_date.date().toPyDate()
+        dom_date_int = int(datetime.datetime(dom_date.year, dom_date.month, dom_date.day).timestamp())
+        if form == "LIQUID":
+            if unit == "ml":
+                package_size_db = package_size / 1000.0
+            else:
+                package_size_db = package_size
+            total_quantity = package_size_db * quantity
+            price_per_unit = price_per_package / (total_quantity * 1000) if unit == "ml" and total_quantity > 0 else price_per_package / total_quantity if total_quantity > 0 else 0.0
+            unit_db = unit
+        elif form == "POWDER":
+            if unit == "g":
+                package_size_kg = package_size / 1000.0
+            else:
+                package_size_kg = package_size
+            total_quantity = package_size_kg * quantity
+            price_per_unit = price_per_package / (total_quantity * 1000) if unit == "g" and total_quantity > 0 else price_per_package / total_quantity if total_quantity > 0 else 0.0
+            unit_db = unit
+            package_size_db = package_size_kg
+        elif form == "TABLET":
+            total_quantity = package_size * quantity
+            price_per_unit = price_per_package / total_quantity if total_quantity > 0 else 0.0
+            unit_db = unit
+            package_size_db = package_size
+        elif form == "AEROSOL":
+            package_size_l = package_size / 1000.0
+            total_quantity = package_size_l * quantity
+            price_per_unit = price_per_package / (total_quantity * 1000) if total_quantity > 0 else 0.0
+            unit_db = unit
+            package_size_db = package_size_l
         return {
-            "date_received": date_received,
-            "product_name": self.product_name.text().strip().upper(),
-            "form": self.form_combo.currentText(),
-            "unit": self.unit.text().strip(),
-            "package_size": package_size,
-            "package_type": self.package_type.text().strip(),
+            "date_received": int(time.time()),
+            "product_name": product_name,
+            "form": form,
+            "unit": unit_db,
+            "package_size": package_size_db,
+            "package_type": package_type,
             "quantity": quantity,
             "total_quantity": total_quantity,
             "price_per_unit": price_per_unit,
-            "total_value": total_value,
-            "batch_number": self.batch_number.text().strip().upper(),
-            "expiry_date": expiry_date,
-            "dom_date": dom_date,
+            "total_value": price_per_package,
+            "batch_number": batch_number,
+            "expiry_date": expiry_date_int,
+            "dom_date": dom_date_int,
             "application_type": self.application_type.currentText(),
             "withholding_period": withholding_period,
-            "notes": self.notes.text().strip(),
+            "notes": notes,
             "last_updated": int(time.time()),
             "created_at": int(time.time())
         }
@@ -200,7 +310,7 @@ class RemoveChemicalDialog(QDialog):
         self.setWindowTitle("Remove Chemical Product")
         layout = QFormLayout(self)
         self.product_combo = QComboBox()
-        self.product_combo.addItems(products)
+        self.product_combo.addItems([force_upper(p) for p in products])
         layout.addRow("Product to Remove", self.product_combo)
         self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         self.buttons.accepted.connect(self.accept)
@@ -209,7 +319,7 @@ class RemoveChemicalDialog(QDialog):
         self.setLayout(layout)
 
     def get_selected_product(self):
-        return str(self.product_combo.currentText().strip()).upper()
+        return force_upper(self.product_combo.currentText().strip())
 
 class ChemInventoryPage(QWidget):
     def __init__(self, parent=None):
@@ -220,7 +330,6 @@ class ChemInventoryPage(QWidget):
         header.setStyleSheet("font-weight: bold; font-size: 15px; margin-top: 12px;")
         layout.addWidget(header)
 
-        # Main Table
         self.chem_table = QTableWidget(0, len(TABLE_COLUMNS))
         self.chem_table.setHorizontalHeaderLabels([
             "Date Received", "Product Name", "Form", "Unit", "Package Size", "Package Type",
@@ -276,7 +385,7 @@ class ChemInventoryPage(QWidget):
                     expiry_date INTEGER,
                     dom_date INTEGER,
                     application_type TEXT,
-                    withholding_period INTEGER,
+                    withholding_period REAL,
                     notes TEXT,
                     last_updated INTEGER,
                     created_at INTEGER
@@ -284,6 +393,81 @@ class ChemInventoryPage(QWidget):
             """)
             conn.commit()
             conn.close()
+
+    def get_all_products_data(self):
+        self._ensure_table()
+        products = {}
+        if os.path.exists(DB_PATH):
+            conn = sqlite3.connect(DB_PATH)
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT product_name, form, unit, package_size, package_type, quantity, total_quantity, price_per_unit, total_value, batch_number, expiry_date, dom_date, application_type, withholding_period, notes FROM chemical_inventory"
+            )
+            for row in cur.fetchall():
+                products[force_upper(row[0])] = {
+                    "product_name": force_upper(row[0]),
+                    "form": row[1],
+                    "unit": row[2],
+                    "package_size": float(row[3]) if row[3] is not None else 0.0,
+                    "package_type": row[4],
+                    "quantity": float(row[5]) if row[5] is not None else 0.0,
+                    "total_quantity": float(row[6]) if row[6] is not None else 0.0,
+                    "price_per_unit": float(row[7]) if row[7] is not None else 0.0,
+                    "total_value": float(row[8]) if row[8] is not None else 0.0,
+                    "batch_number": force_upper(row[9]),
+                    "expiry_date": float(row[10]) if row[10] is not None else 0.0,
+                    "dom_date": float(row[11]) if row[11] is not None else 0.0,
+                    "application_type": row[12],
+                    "withholding_period": float(row[13]) if row[13] is not None else 0.0,
+                    "notes": force_upper(row[14]) if row[14] else "",
+                }
+            conn.close()
+        return products
+
+    def display_value_with_unit(self, value, unit, for_form, value_type):
+        # value_type: "size", "total", "price"
+        if for_form == "LIQUID":
+            if value_type == "total":
+                return f"{value:.2f} L"
+            elif value_type == "price":
+                if force_upper(unit) == "ML":
+                    return f"${value:.2f} /ml"
+                else:
+                    return f"${value:.2f} /L"
+            else:
+                if force_upper(unit) == "ML":
+                    return f"{value * 1000:.2f} ml"
+                else:
+                    return f"{value:.2f} L"
+        elif for_form == "POWDER":
+            if value_type == "total":
+                return f"{value:.2f} Kg"
+            elif value_type == "price":
+                if force_upper(unit) == "G":
+                    return f"${value:.2f} /g"
+                else:
+                    return f"${value:.2f} /Kg"
+            else:
+                if force_upper(unit) == "G":
+                    return f"{value * 1000:.2f} g"
+                else:
+                    return f"{value:.2f} Kg"
+        elif for_form == "TABLET":
+            if value_type == "total":
+                return f"{value:.0f} Tablets"
+            elif value_type == "price":
+                return f"${value:.2f} /Tablet"
+            else:
+                return f"{value:.0f} Tablets"
+        elif for_form == "AEROSOL":
+            if value_type == "total":
+                return f"{value:.2f} L"
+            elif value_type == "price":
+                return f"${value:.2f} /ml"
+            else:
+                return f"{value * 1000:.2f} ml"
+        else:
+            return f"{value:.2f}"
 
     def refresh_chem_table(self):
         self._ensure_table()
@@ -301,7 +485,11 @@ class ChemInventoryPage(QWidget):
         for row in rows:
             row_num = self.chem_table.rowCount()
             self.chem_table.insertRow(row_num)
-            # Format dates and currency
+            (
+                date_received, product_name, form, unit, package_size, package_type, quantity,
+                total_quantity, price_per_unit, total_value, batch_number, expiry_date,
+                dom_date, application_type, withholding_period, notes
+            ) = row
             def fmt_date(ts):
                 try:
                     return time.strftime("%Y-%m-%d", time.localtime(ts)) if ts else ""
@@ -312,27 +500,41 @@ class ChemInventoryPage(QWidget):
                     return f"${float(val):,.2f}" if val is not None else ""
                 except Exception:
                     return str(val) if val is not None else ""
+
+            disp_package_size = self.display_value_with_unit(package_size, unit, form, "size")
+            disp_total_quantity = self.display_value_with_unit(total_quantity, unit, form, "total")
+            disp_price_per_unit = self.display_value_with_unit(price_per_unit, unit, form, "price")
+            disp_quantity = f"{float(quantity):.2f}"
+            disp_withholding = f"{float(withholding_period):.2f}"
+
             values = [
-                fmt_date(row[0]),                # Date received
-                row[1],                          # Product name
-                row[2],                          # Form
-                row[3],                          # Unit
-                str(row[4]),                     # Package size
-                row[5],                          # Package type
-                str(row[6]),                     # Quantity
-                str(row[7]),                     # Total quantity
-                fmt_currency(row[8]),            # Price per unit
-                fmt_currency(row[9]),            # Total value
-                row[10],                         # Batch number
-                fmt_date(row[11]),               # Expiry date
-                fmt_date(row[12]),               # DOM
-                row[13],                         # Application type
-                str(row[14]),                    # Withholding period
-                row[15],                         # Notes
+                fmt_date(date_received),
+                force_upper(product_name),
+                form,
+                unit,
+                disp_package_size,
+                package_type,
+                disp_quantity,
+                disp_total_quantity,
+                disp_price_per_unit,
+                fmt_currency(total_value),
+                force_upper(batch_number),
+                fmt_date(expiry_date),
+                fmt_date(dom_date),
+                application_type,
+                disp_withholding,
+                force_upper(notes) if notes else ""
             ]
             for col, val in enumerate(values):
-                alignment = Qt.AlignLeft | Qt.AlignVCenter if col in [1, 2, 5, 10, 13, 15] else Qt.AlignCenter
-                item = QTableWidgetItem(val)
+                if col in [8, 9]:  # price per unit, total value: right
+                    alignment = Qt.AlignRight | Qt.AlignVCenter
+                elif col == 10:    # batch number: center
+                    alignment = Qt.AlignCenter | Qt.AlignVCenter
+                elif col in [1, 2, 5, 13, 15]:
+                    alignment = Qt.AlignLeft | Qt.AlignVCenter
+                else:
+                    alignment = Qt.AlignCenter | Qt.AlignVCenter
+                item = QTableWidgetItem(str(val))
                 item.setTextAlignment(alignment)
                 self.chem_table.setItem(row_num, col, item)
         self.chem_table.resizeColumnsToContents()
@@ -340,8 +542,8 @@ class ChemInventoryPage(QWidget):
         self.chem_table.setSortingEnabled(True)
 
     def add_chemical_product(self):
-        products = self._get_product_names()
-        dlg = ChemicalDialog(parent=self)
+        products_data = self.get_all_products_data()
+        dlg = ChemicalDialog(products_data, parent=self)
         if dlg.exec_() == QDialog.Accepted:
             values = dlg.get_final_values()
             unix_ts = int(time.time())
@@ -349,14 +551,12 @@ class ChemInventoryPage(QWidget):
                 os.makedirs(UPLOAD_DIR)
             filename = f"{unix_ts}_chem_inventory_entry.json"
             filepath = os.path.join(UPLOAD_DIR, filename)
-            # Write user input fields as a JSON file in the upload queue
             try:
                 with open(filepath, "w", encoding="utf-8") as f:
                     json.dump([values], f, indent=2)
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to write chemical inventory entry log:\n{e}")
                 return
-            # Call the merge script to process the new info
             try:
                 result = subprocess.run(
                     ["python", MERGE_SCRIPT_PATH],
@@ -375,7 +575,7 @@ class ChemInventoryPage(QWidget):
             self.refresh_chem_table()
 
     def remove_chemical_product(self):
-        products = self._get_product_names()
+        products = list(self.get_all_products_data().keys())
         if not products:
             QMessageBox.information(self, "No Products", "No products to remove.")
             return
@@ -411,18 +611,6 @@ class ChemInventoryPage(QWidget):
 
             self.refresh_chem_table()
 
-    def _get_product_names(self):
-        self._ensure_table()
-        products = []
-        if os.path.exists(DB_PATH):
-            conn = sqlite3.connect(DB_PATH)
-            cur = conn.cursor()
-            cur.execute("SELECT DISTINCT product_name FROM chemical_inventory")
-            rows = cur.fetchall()
-            products = [str(row[0]) for row in rows if row[0]]
-            conn.close()
-        return products
-
     def export_table_csv(self):
         path, _ = QFileDialog.getSaveFileName(self, "Export Chemical Inventory CSV", "", "CSV Files (*.csv)")
         if not path:
@@ -444,6 +632,8 @@ class ChemInventoryPage(QWidget):
                 writer.writerow(row_items)
 
     def print_table(self):
+        from PyQt5.QtPrintSupport import QPrinter, QPrintDialog
+        from PyQt5.QtGui import QPainter, QPageLayout
         printer = QPrinter(QPrinter.HighResolution)
         printer.setPageSize(QPrinter.A4)
         printer.setOrientation(QPrinter.Landscape)
@@ -456,11 +646,9 @@ class ChemInventoryPage(QWidget):
             painter = QPainter(printer)
             page_rect = printer.pageRect()
             widget_rect = self.chem_table.rect()
-
             x_scale = page_rect.width() / widget_rect.width()
             y_scale = page_rect.height() / widget_rect.height()
             scale = min(x_scale, y_scale)
-
             painter.translate(page_rect.x(), page_rect.y())
             painter.scale(scale, scale)
             self.chem_table.render(painter)
