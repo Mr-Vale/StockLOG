@@ -1,0 +1,58 @@
+> Implementation was subsequently authorised. This document records preparation decisions; current status, tests and the sole native Debian 13/Caddy deployment are in [the implementation checklist](../IMPLEMENTATION.md) and [operational installation guide](../operations/INSTALL.md). HostGator/cPanel, Python 3.9, MySQL 5.7 and Ubuntu deployment compatibility are superseded requirements.
+
+# ADR-001: transactional Python web replacement
+
+Status: proposed for owner review on the newly selected RackNerd KVM VPS; implementation/deployment not yet authorised. Updated 23 October 2026. See [current hosting plan](runtime-hosting.md).
+
+## Decision
+
+Use one Django 5.2 LTS application with distribution-managed supported Python, MariaDB InnoDB and the official Django MySQL backend through mysqlclient. The owner has selected and set up Debian 13; use Python 3.13 and MariaDB 11.8 as the proposed primary stack, with actual installation still to verify. The earlier Ubuntu 24.04 comparison is no longer a pending choice. Use distribution security updates and the latest supported Django/dependency patches when locking implementation dependencies. Django supplies authentication, password hashing, sessions, CSRF, forms, migrations, ORM and WSGI; business rules live in explicit transactional services, not model signals, templates or unrestricted Django admin edits.
+
+The owner has moved the deployment target from HostGator shared hosting to a RackNerd KVM VPS with 2 GB RAM, 35 GB SSD and 2 vCPU. We can select compatible maintained runtimes rather than working around Python 3.9/Percona 5.7. The prior MySQL 5.7 target is treated as a HostGator-specific constraint superseded by this move; if independent backward compatibility is required later, it needs a separate decision. Preserve [the historical assessment](hostgator-assessment.md) and original supplied specification unchanged.
+
+The browser uses server-rendered responsive HTML/CSS with small same-origin JavaScript for scans/lookups, import preview, report configuration and submission recovery. Serve static assets directly; no Node server, Docker, root access, task broker, persistent worker, WebSocket or native phone app is required in production. Local browser automation/build tooling may use Node without making it a hosting dependency. Self-host assets to avoid unnecessary CDN availability requirements.
+
+Use ReportLab's paginated tables for PDF and openpyxl for XLSX structured import/export, plus defusedxml and bounded ZIP/XML parsing. This avoids requiring a headless browser or OS-level PDF renderer on shared hosting. Spreadsheet imports reject macros, unexpected archive entries, formulas as business values, oversized expansion, invalid dates and unbounded rows; exported text is written as text and protected against formula injection. No photo/document upload storage is added. Controlled restore archives are a separate admin-only maintenance path.
+
+Use the chosen distribution's supported MariaDB package (Debian 13: 11.8; Ubuntu 24.04: 10.11) and run acceptance/concurrency against that exact major version. Maintain one primary production combination rather than promising both OS/DB variants before testing. Framework minimums (MariaDB 10.5 / MySQL 8.0.11) are not a recommendation to use end-of-life versions. SQLite is not acceptance evidence for locks, decimals or constraints.
+
+## Components and boundaries
+
+```mermaid
+flowchart LR
+  B[Phone or desktop browser] -->|HTTPS and session| W[Caddy and Gunicorn WSGI]
+  W --> V[Django forms and views]
+  V --> S[Authorised transactional services]
+  S --> D[(InnoDB business ledger and projections)]
+  V --> R[Allowlisted reports to PDF and XLSX]
+  R --> D
+  C[Daily server cron] --> K[Consistent backup and validation]
+  K --> A[Private immutable archives and manifest]
+  N[Future NAS scheduled pull] -->|Restricted authenticated transfer| A
+```
+
+Future package boundaries: `accounts`, `properties`, `animals`, `mobs`, `inventory`, `activities`, `corrections`, `reports`, `audit`, `recovery`, `operations`. Put all state mutations through services with one transaction covering stock, participants, money allocations, restrictions, history, audit and idempotency outcome. No browser SQL, executable report SQL or unreviewed raw model administration. Keep configuration, WSGI adapter, static paths, cron and backup transfer isolated from domain code.
+
+Fresh installation is empty. Create the first admin only with an authenticated maintenance command, no public signup or default password. Two roles, administrator and standard user. Everyone may read financials and perform the specified operational actions; only admin handles sales/deaths reversal, old corrections, historical mob administration, conflicts and purge. Desktop administration is an explicitly authorised route/workflow, not a viewport check. Custom authenticated admin screens must enforce the same service permissions and logs.
+
+Security baseline: HTTPS, secure/HttpOnly/SameSite cookies, CSRF for unsafe requests, password hashing via maintained Django hashers, account disablement/session expiry, login throttling, least-privilege DB/transfer accounts, parameterised ORM, allowlisted filters and protected backups outside the web root. Store deployment secrets in private host configuration; no values in Git, browser storage or logs. Admin-created accounts and password resets do not require SMTP. Users' display timezone/date format are settings; timestamps remain Unix seconds.
+
+## History, arithmetic and recovery
+
+Use an append-preserving event/transaction ledger with current projections and dated historical relationships, not full event sourcing. Every animal has a permanent identity independent of tags and presence cycles. Store effective time separately from recorded time and deterministic same-second order; retain participants and price basis on each accepted event. [Database design](database-design.md) specifies precision, residual allocation, locks, temporal checks and correction previews.
+
+Pending recovery is browser-local input, not offline business state or an ordinary draft feature. Associate pending payloads with authenticated account/installation; purge or isolate access on logout/account switching, do not keep authentication tokens in payload storage, and explain shared-device/browser-clear limitations. On network uncertainty show “not confirmed”, retain through reload, offer readable text download/share, review/retry/discard. The database owns an immutable idempotency result. On retry, return a committed result before revalidating as a new event; never reapply it. Only an uncommitted request is revalidated; material changes require review. Local discard cannot undo a committed event. Live server data is never replaced with a browser cache.
+
+## Hosting and operational fit
+
+Use Caddy for HTTPS/static files and certificate renewal, Gunicorn for WSGI, and systemd to supervise the web process. Caddy replaces Nginx in this proposal rather than adding another proxy layer; it is not a graphical hosting control panel. Schedule daily backup management commands with cron or a systemd timer, with non-overlap locking and explicit timezone. Keep MariaDB local. cPanel/Passenger and a hosting control panel are unnecessary. Administrative provisioning access will be needed when deployment is separately authorised; the running application uses an unprivileged service account. No deployment or VPS connection has been performed.
+
+For this 2 GB VPS start conservatively: one Gunicorn worker with two threads, bounded report/import sizes, one expensive export at a time, and a MariaDB buffer pool around 256–384 MiB subject to measurement. Do not use CPU-count worker formulas that overcommit RAM. Reserve memory for backup compression and exports; stage-one/staging checks must measure peak usage before readiness is claimed. See [resource and operations plan](vps-deployment-plan.md). These are starting settings, not measured capacity guarantees.
+
+Use bounded synchronous reports for the initial 1–10 accounts. For larger exports, use a DB job record processed by scheduled cron if proven necessary; do not require a persistent worker. Measure host request time/memory before adopting this fallback. Daily cron creates self-contained consistent archives and retains the three latest successful unique versions; NAS pull is a later, explicitly bounded task. Backups and restore details are designed in [database design](database-design.md), not executed here.
+
+## Alternatives and review points
+
+Flask with SQLAlchemy/Alembic is viable on a supported Python runtime but introduces additional choices for account management, CSRF, admin and migrations. It is not chosen merely to accommodate end-of-life Python. Django's batteries reduce the security/maintenance surface for this size of application. A SPA/API split adds build and recovery complexity without a stated need. Legacy PyQt/SQLite, identifier primary keys, mutable cost totals and a standalone JSON merge process do not meet the agreed history and concurrency rules.
+
+Proposed technical policies for review: calendar-day restriction arithmetic in the property timezone; exact decimal allocations with deterministic residual handling; actual effective-time stock checks plus protection of later accepted events; typed declaration/signer fields without claiming cryptographic signatures; retention tombstones preserving nonreuse/shared totals. These are explicit implementation choices, not new fixture assumptions. Initial delivery has no weights, maps, paddock-management UI, attachment storage, NLIS service integration or automatic purging.

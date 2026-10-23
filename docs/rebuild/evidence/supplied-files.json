@@ -1,0 +1,17 @@
+[
+  {
+    "path": "docs/specifications/StockLOG_rebuild_agent_prompt.md",
+    "bytes": 19994,
+    "sha256": "4d667438aa3be0c6065f8a55c025d61b5f5c94acfb38a041f09a8e7c851e1644"
+  },
+  {
+    "path": "docs/testing/StockLOG_acceptance_scenario.md",
+    "bytes": 10773,
+    "sha256": "9c125ae9ba53bd55cd409adacf86ed6dbbd8d952e11519035f47910bb669b443"
+  },
+  {
+    "path": "docs/reference/may23-lpa-farm-records.xlsx",
+    "bytes": 846022,
+    "sha256": "7354987c6a2423d59472ae8d6e93529d5c3d5ee4ab50b789b465ecf0a18178ba"
+  }
+]

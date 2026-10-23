@@ -1,0 +1,31 @@
+{
+  "source": "Owner reply to hosting capability question; not independently executed host checks",
+  "provider": "HostGator",
+  "plan": "Hatchling shared hosting",
+  "python": {
+    "version": "3.9.25",
+    "executable": "/usr/bin/python3",
+    "pip_version": "21.3.1",
+    "pip_python": "3.9"
+  },
+  "application_manager": "Phusion Passenger",
+  "python_wsgi_support": "not yet confirmed",
+  "database": {
+    "server": "Percona Server",
+    "version": "5.7.44-48",
+    "required_compatibility": "MySQL 5.7",
+    "phpmyadmin_version": "5.2.3",
+    "mysqldump_installed": true,
+    "mysqldump_version": "5.7.44-48"
+  },
+  "cron": "available",
+  "ssh": "confirmed working by owner",
+  "sftp": "not yet confirmed",
+  "export_backup_tools": [
+    "mysqldump",
+    "phpMyAdmin Export",
+    "cPanel Backup",
+    "cPanel Backup Wizard"
+  ],
+  "no_host_access_or_deployment_performed": true
+}

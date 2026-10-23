@@ -1,0 +1,20 @@
+{
+  "scope": "Synthetic integration fixture; production MariaDB engine, not owner data",
+  "april": {
+    "cost": "10818.000000000000",
+    "revenue": "20000.000000000000",
+    "profit": "9182.000000000000"
+  },
+  "august": {
+    "cost": "21636.000000000000",
+    "revenue": "40000.000000000000",
+    "profit": "18364.000000000000"
+  },
+  "combined_cost": "32454",
+  "combined_revenue": "60000",
+  "combined_profit": "27546",
+  "original_animals": 36,
+  "deaths": 6,
+  "sales": 30,
+  "source_fixture": "docs/testing/StockLOG_acceptance_scenario.md"
+}
