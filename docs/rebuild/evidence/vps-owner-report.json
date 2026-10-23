@@ -8,7 +8,9 @@
   "os_options": ["Debian 13", "Ubuntu 24.04"],
   "owner_asked_about": "Caddy as web host interface",
   "proposed_web_server": "Caddy, with Gunicorn running Django behind it",
-  "operating_system_selected_by_owner": null,
-  "vps_provisioning_or_deployment_performed": false,
+  "operating_system_selected_by_owner": "Debian 13",
+  "owner_reports_vps_setup": true,
+  "installed_packages_and_services_verified_by_agent": false,
+  "agent_vps_provisioning_or_deployment_performed": false,
   "planning_assumption": "Earlier Python 3.9 and MySQL 5.7 restrictions belonged to the superseded HostGator plan; independent backward compatibility has not been requested for the fresh VPS"
 }

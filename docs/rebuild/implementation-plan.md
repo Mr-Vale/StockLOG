@@ -13,6 +13,7 @@ This task completes **preparation only**. No checkbox below implies application 
 - [x] Produce proposed architecture, logical database, included LPA field matrix and staged checks.
 - [x] Record owner's HostGator Hatchling, Python 3.9.25, Percona 5.7.44-48, Passenger, SSH/cron and backup-tool evidence; preserve the stated MySQL 5.7 compatibility target.
 - [x] Record the subsequent RackNerd KVM target (2 GB RAM, 35 GB SSD, 2 vCPU; Debian 13 or Ubuntu 24.04) and Caddy proposal. Retain the superseded HostGator assessment as history; treat its MySQL 5.7 target as a former-host constraint unless independently required.
+- [x] Record owner's subsequent confirmation that the RackNerd VPS has been set up with Debian 13; OS selection is complete, service readiness is not verified.
 - [ ] Verify actual VPS services, signed patched packages, domain/TLS, SQL grants and resource/backup limits. Owner-selected resources and upstream package metadata do not establish installed readiness.
 - [ ] Owner reviews proposed stack, implementation policies and stage-one coding scope.
 

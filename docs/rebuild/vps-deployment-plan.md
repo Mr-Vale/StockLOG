@@ -1,6 +1,6 @@
 # RackNerd VPS deployment and resource plan
 
-Proposal only, updated 23 October 2026. Target: RackNerd KVM, 2 GB RAM / 35 GB SSD / 2 vCPU. Prefer minimal Debian 13; Ubuntu 24.04 is an alternative. No commands here have been executed on a VPS and no live data/NAS has been accessed.
+Proposal only, updated 23 October 2026. Target: RackNerd KVM, 2 GB RAM / 35 GB SSD / 2 vCPU. The owner confirms the VPS has been set up with Debian 13. No commands here have been executed by the agent on the VPS and no live data/NAS has been accessed. Package/service setup and resource validation remain outstanding.
 
 ## Runtime layout
 
