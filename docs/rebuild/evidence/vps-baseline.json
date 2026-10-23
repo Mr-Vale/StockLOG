@@ -1,0 +1,13 @@
+{
+  "source": "Owner-pasted output of cat /etc/os-release, python3 --version, free -h and df -h /",
+  "clean_install": true,
+  "all_required_packages_must_be_in_installer": true,
+  "os": {"name": "Debian GNU/Linux", "version_id": "13", "version_codename": "trixie", "debian_version_full": "13.7"},
+  "python_version": "3.13.5",
+  "memory_human_readable": {"total": "1.9Gi", "used": "195Mi", "free": "1.8Gi", "shared": "472Ki", "buff_cache": "90Mi", "available": "1.7Gi"},
+  "swap_human_readable": {"total": "1.0Gi", "used": "0B", "free": "1.0Gi"},
+  "root_filesystem": {"device": "/dev/vda1", "size": "34G", "used": "842M", "available": "33G", "use_percent": "3%", "mount": "/"},
+  "root_ssh_shell_shown_by_owner": true,
+  "agent_connected_to_vps": false,
+  "application_services_verified": false
+}

@@ -2,6 +2,8 @@
 
 Updated 23 October 2026. Owner-selected resources: **2 GB RAM, 35 GB SSD, 2 vCPU**. The owner now confirms the VPS has been set up with **Debian 13**; OS selection is complete. Caddy remains the proposed front-end web server. The agent has not connected to or installed/deployed anything on that VPS; installed packages and application services are not verified.
 
+The owner has supplied baseline command output: Debian 13.7, Python 3.13.5, 1.9 GiB total RAM with 1.7 GiB available, 1.0 GiB unused swap, and 33G available on the root filesystem. This resolves the basic OS/Python/resource questions at owner-output evidence level. It is a clean install: **the final StockLOG installer must include all system and application prerequisites**, not assume Caddy/MariaDB/build tools are present. See [installation contract](debian13-installation-contract.md) and [baseline evidence](evidence/vps-baseline.json).
+
 The move supersedes the previous HostGator-specific Python 3.9/Percona 5.7 limitations. Treat MySQL 5.7 compatibility as a constraint of that former plan unless the owner states an independent need for it. Keep [the historical assessment](hostgator-assessment.md) and supplied specification unchanged; later owner instructions determine the current deployment target. No business or acceptance rule changes.
 
 ## Recommended stack and OS comparison
@@ -42,7 +44,7 @@ Avoid a control panel, Redis/Celery, a Node server, a second reverse proxy or Do
 
 ## Remaining preflight and evidence boundaries
 
-- Debian 13 setup is owner-confirmed. Actual architecture, usable RAM/storage, swap, administrative access, SSH reachability, package versions and security updates have not been independently checked. No credentials are requested now.
+- Owner-supplied root SSH output establishes Debian 13.7/Python 3.13.5 and the reported RAM/disk/swap baseline. Architecture, package update/security state, installed services and actual application privileges still require installation checks; no agent VPS session has occurred. Do not request the same baseline output again without a new diagnostic reason.
 - Install/import mysqlclient using the OS client development libraries and Python headers in a virtualenv during authorised setup. The earlier cloud probe lacked those libraries; that is a local setup prerequisite, not an inherent VPS restriction.
 - Prove selected MariaDB version, InnoDB, strict SQL mode, utf8mb4/collation, enforced CHECK/FK/unique constraints, READ COMMITTED and concurrent row locks in an isolated test schema. Run actual acceptance against the chosen engine, not SQLite.
 - Prove systemd restart behaviour, Caddy-to-Gunicorn requests, static file routing, Django secure-session/CSRF/proxy settings, final-domain HTTPS and restricted network exposure when staging/deployment is authorised.

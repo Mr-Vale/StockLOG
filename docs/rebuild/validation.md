@@ -15,6 +15,8 @@ Date: 23 October 2026. Scope: repository preservation, source inspection, design
 
 Machine-readable probe results: [dependency-probes.json](evidence/dependency-probes.json). Workbook structure evidence: [workbook-inventory.json](evidence/workbook-inventory.json).
 
+Additional owner-supplied host evidence: [Debian 13.7/Python 3.13.5/resource output](evidence/vps-baseline.json), showing existing swap and ample initial free disk. This is not an agent-executed VPS check or evidence of Caddy/MariaDB installation. The owner requires all dependencies in the clean-install bootstrap; the [installer contract](debian13-installation-contract.md) records this, with actual fresh-machine installation/repeatability tests still unrun.
+
 ## Failed or restricted checks, with diagnosis
 
 | Check | Observed result | Diagnosis / required next step |

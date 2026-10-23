@@ -2,6 +2,8 @@
 
 Proposal only, updated 23 October 2026. Target: RackNerd KVM, 2 GB RAM / 35 GB SSD / 2 vCPU. The owner confirms the VPS has been set up with Debian 13. No commands here have been executed by the agent on the VPS and no live data/NAS has been accessed. Package/service setup and resource validation remain outstanding.
 
+Owner command output now shows Debian 13.7, Python 3.13.5, 1.9 GiB RAM (1.7 GiB available), existing 1.0 GiB unused swap and 33G available root disk. It is a clean install. Include every system/Python prerequisite in the eventual installer per [installation contract](debian13-installation-contract.md); detect/reuse existing swap and do not require separate manual package installation.
+
 ## Runtime layout
 
 ```mermaid

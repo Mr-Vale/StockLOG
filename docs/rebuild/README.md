@@ -10,6 +10,7 @@ The current user request authorises archival, a rebuild branch, storing the supp
 - [Architecture decision](architecture.md)
 - [Runtime and hosting evidence](runtime-hosting.md)
 - [RackNerd VPS resource and operations plan](vps-deployment-plan.md)
+- [Clean Debian 13 installer requirements](debian13-installation-contract.md)
 - [Database design and transaction invariants](database-design.md)
 - [LPA field-to-screen/database/report mapping](lpa-field-mapping.md)
 - [Business-rule traceability and staged checklist](implementation-plan.md)
