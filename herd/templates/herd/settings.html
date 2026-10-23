@@ -1,0 +1,1 @@
+{% extends 'herd/base.html' %}{% block content %}<h1>Display settings</h1><form method="post">{% csrf_token %}{{ form.as_p }}<button>Save display settings</button></form><p>Stored event timestamps and historical restriction rules remain unchanged.</p>{% endblock %}
