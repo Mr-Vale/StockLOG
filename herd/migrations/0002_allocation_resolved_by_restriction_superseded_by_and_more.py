@@ -7,25 +7,51 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('herd', '0001_initial'),
+        ("herd", "0001_initial"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='allocation',
-            name='resolved_by',
-            field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, related_name='+', to='herd.event'),
+            model_name="allocation",
+            name="resolved_by",
+            field=models.ForeignKey(
+                null=True,
+                on_delete=django.db.models.deletion.PROTECT,
+                related_name="+",
+                to="herd.event",
+            ),
         ),
         migrations.AddField(
-            model_name='restriction',
-            name='superseded_by',
-            field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, related_name='+', to='herd.event'),
+            model_name="restriction",
+            name="superseded_by",
+            field=models.ForeignKey(
+                null=True,
+                on_delete=django.db.models.deletion.PROTECT,
+                related_name="+",
+                to="herd.event",
+            ),
         ),
         migrations.AddField(
-            model_name='identifier',
-            name='current_slot',
-            field=models.GeneratedField(db_persist=True, expression=models.Case(models.When(current=True, then=django.db.models.functions.text.Concat(django.db.models.functions.comparison.Cast('animal_id', output_field=models.CharField()), models.Value(':'), 'kind')), default=None), output_field=models.CharField(max_length=64), unique=True),
+            model_name="identifier",
+            name="current_slot",
+            field=models.GeneratedField(
+                db_persist=True,
+                expression=models.Case(
+                    models.When(
+                        current=True,
+                        then=django.db.models.functions.text.Concat(
+                            django.db.models.functions.comparison.Cast(
+                                "animal_id", output_field=models.CharField()
+                            ),
+                            models.Value(":"),
+                            "kind",
+                        ),
+                    ),
+                    default=None,
+                ),
+                output_field=models.CharField(max_length=64),
+                unique=True,
+            ),
         ),
     ]
