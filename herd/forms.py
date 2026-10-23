@@ -8,7 +8,7 @@ COMMON = ['effective_at', 'reason']
 FIELDS = {
  'register': ['entry_source', 'nlis', 'rfid', 'source_pic', 'nvd', 'nlis_upload_reference', 'vendor_name', 'vendor_address', 'destination_paddock_text', 'purchase_cost', 'breed', 'sex', 'estimated_weeks', 'dob', 'mother_nlis', 'mob', 'notes'],
  'mob': ['name'], 'move': ['animal', 'mob', 'destination', 'administration'],
- 'replace_tag': ['animal', 'nlis', 'rfid'], 'edit_animal': ['animal', 'breed', 'sex', 'estimated_weeks', 'dob'],
+ 'replace_tag': ['animal', 'nlis', 'rfid'], 'edit_animal': ['animal', 'breed', 'sex', 'estimated_weeks', 'dob', 'purchase_cost'],
  'sale': ['animals', 'mob', 'destination_pic', 'destination_name', 'nvd', 'nlis_upload_reference', 'origin_paddock_text', 'price', 'price_mode', 'accept_restriction'],
  'death': ['animals', 'mob'],
  'receipt': ['kind', 'name', 'feed_type', 'category', 'packages', 'package_size', 'stock_unit', 'package_price', 'dose_unit', 'batch', 'date_kind', 'date_value', 'restriction_days', 'storage', 'supplier_name', 'origin_text', 'home_grown', 'declaration_type', 'declaration_reference', 'declaration_details', 'residue_certificate_available', 'product_tested', 'residue_test_reference', 'residue_test_details', 'signed_by_name'],

@@ -3,7 +3,7 @@ import builtins
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.db.models import Q
-from django.db.models.functions import Length
+from django.db.models.functions import Length, Concat, Cast
 from django.db.models.lookups import Exact
 from .clock import now
 
@@ -71,6 +71,7 @@ class Identifier(models.Model):
     kind = models.CharField(max_length=8)
     value = models.CharField(max_length=16, db_collation='utf8mb4_bin')
     current = models.BooleanField(default=True)
+    current_slot = models.GeneratedField(expression=models.Case(models.When(current=True, then=Concat(Cast('animal_id', output_field=models.CharField()), models.Value(':'), 'kind')), default=None), output_field=models.CharField(max_length=64), db_persist=True, unique=True)
     effective_at = models.BigIntegerField()
     retired_at = models.BigIntegerField(null=True)
     reason = models.TextField(blank=True)
@@ -121,6 +122,7 @@ class Allocation(models.Model):
     category = models.CharField(max_length=20)
     amount = decimal_field()
     unknown = models.BooleanField(default=False)
+    resolved_by = models.ForeignKey(Event, related_name='+', null=True, on_delete=models.PROTECT)
     class Meta:
         constraints = [models.UniqueConstraint(fields=['event', 'animal', 'category'], name='allocation_once')]
 
@@ -167,6 +169,7 @@ class Restriction(models.Model):
     ends_at = models.BigIntegerField()
     days = models.PositiveIntegerField()
     timezone = models.CharField(max_length=64)
+    superseded_by = models.ForeignKey(Event, related_name='+', null=True, on_delete=models.PROTECT)
 
 class Audit(Scoped):
     recorded_at = models.BigIntegerField(default=now)

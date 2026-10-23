@@ -294,6 +294,18 @@ def edit_animal(actor, event, data):
     if 'estimated_weeks' in changed:
         changed['age_reference'] = a.age_reference
         a.age_reference = event.effective_at
+    if data.get('purchase_cost') not in [None, '']:
+        price = number(data['purchase_cost'], nonnegative=True)
+        presence = a.presence.filter(start__lte=event.effective_at).order_by('-start').first()
+        purchase = a.allocations.filter(category='purchase', event=presence.arrival).first()
+        if purchase is None:
+            raise ValidationError('No purchase record is available for this presence cycle.')
+        prior = -sum(a.allocations.filter(category='purchase', event__effective_at__gte=presence.start).values_list('amount', flat=True))
+        allocate(event, [a], -(price-prior), 'purchase')
+        changed['purchase_cost'] = str(prior)
+        if purchase.unknown and purchase.resolved_by_id is None:
+            purchase.resolved_by = event
+            purchase.save(update_fields=['resolved_by'])
     a.save()
     event.before = changed
     participants(event, [a])
@@ -312,7 +324,7 @@ def depart(actor, event, data):
         later = Participant.objects.filter(animal=a, event__effective_at__gt=event.effective_at, event__reversed_by__isnull=True).exclude(event=event)
         if later.exists():
             raise ValidationError('Later events conflict with this departure. Review a coherent correction first.')
-        active = a.restrictions.filter(event__reversed_by__isnull=True, starts_at__lte=event.effective_at, ends_at__gt=event.effective_at)
+        active = a.restrictions.filter(event__reversed_by__isnull=True, superseded_by__isnull=True, starts_at__lte=event.effective_at, ends_at__gt=event.effective_at)
         if active.exists():
             restrictions.append(a.label)
         p = a.presence.get(start__lte=event.effective_at, end__isnull=True)
@@ -482,29 +494,65 @@ def observation(actor, event, data):
 
 def reconcile_membership(actor, correction):
     affected = []
-    for original in Event.objects.filter(property=actor.property, kind__in=['feed', 'treat', 'procedure', 'vet'], effective_at__gte=correction.effective_at, reversed_by__isnull=True).exclude(pk=correction.pk):
+    originals = Event.objects.filter(property=actor.property, kind__in=['feed', 'treat', 'procedure', 'vet'], effective_at__gte=correction.effective_at, reversed_by__isnull=True).exclude(pk=correction.pk)
+    for original in originals:
         if not original.details.get('mob'):
             continue
         animals = members(actor, original.details['mob'], original.effective_at)
-        old_ids = set(original.participants.values_list('animal_id', flat=True))
-        if old_ids == {a.id for a in animals}:
+        related = list(Event.objects.filter(property=actor.property, details__original=str(original.id), kind='allocation_correction').order_by('submitted_at', 'effective_order', 'id'))
+        old_ids = {__import__('uuid').UUID(x) for x in related[-1].details['after_members']} if related else set(original.participants.values_list('animal_id', flat=True))
+        new_ids = {a.id for a in animals}
+        if old_ids == new_ids:
             continue
+        if original.details.get('procedure') == 'castration':
+            raise ValidationError('A historical move changes a castration cohort. Correct the dated procedure/sex history first; no partial movement was saved.')
         adjustment = Event.objects.create(property=actor.property, actor=actor, kind='allocation_correction', effective_at=original.effective_at, effective_order=correction.effective_order, details={'original': str(original.id), 'movement': str(correction.id), 'before_members': [str(x) for x in old_ids], 'after_members': [str(a.id) for a in animals]})
-        # Reverse previous effective allocations without deleting originals.
-        related = Event.objects.filter(property=actor.property, details__original=str(original.id), kind='allocation_correction')
-        sums = Allocation.objects.filter(Q(event=original) | Q(event__in=related)).values('animal_id', 'category').annotate(total=Sum('amount'))
-        old_animals = {a.id: a for a in Animal.objects.filter(id__in=old_ids, property=actor.property)}
-        totals = {}
+        categories = {}
+        sums = Allocation.objects.filter(event__in=[original, *related]).values('animal_id', 'category').annotate(total=Sum('amount'))
+        old = {}
         for row in sums:
-            totals[row['category']] = totals.get(row['category'], Decimal(0)) + row['total']
-            if row['total']:
-                Allocation.objects.create(event=adjustment, animal_id=row['animal_id'], category='reverse_' + row['category'][:12], amount=-row['total'])
-        for category, total in totals.items():
-            allocate(adjustment, animals, total, category)
-        participants(adjustment, list(old_animals.values()))
-        audit(actor, 'historical_allocation_correction', adjustment, original=str(original.id), before=[str(x) for x in old_ids], after=[str(a.id) for a in animals])
+            old[(row['animal_id'], row['category'])] = row['total']
+        count = len(animals)
+        if original.kind == 'feed':
+            qty = Decimal(original.details['consumed'])
+            if original.details.get('mode') == 'kg_per_head':
+                qty = number(original.details['quantity'], positive=True) * count
+            categories['feed'] = -rounded(qty * Decimal(original.details['unit_cost']))
+        else:
+            qty = Decimal(original.details.get('consumed', '0')) / int(original.details['count']) * count
+            if original.details.get('item'):
+                categories['chemical'] = -rounded(qty * Decimal(original.details['unit_cost']))
+            fee = Decimal(original.details.get('fee') or '0')
+            if original.kind in ['procedure', 'vet'] or fee:
+                categories['vet' if original.kind == 'vet' else 'procedure'] = -(fee if original.details.get('fee_mode') == 'group' else fee * count)
+        if original.details.get('item'):
+            item = scoped(Inventory, actor, original.details['item'])
+            used = -sum(StockPosting.objects.filter(event__in=[original, *related], item=item).values_list('quantity', flat=True))
+            difference = used - qty
+            if difference:
+                if item.kind == 'feed' and difference < 0 and item.balance <= 0:
+                    raise ValidationError('Correcting historical membership needs additional feed but current stock is nonpositive. Replenish/correct stock first.')
+                post_stock(adjustment, item, difference)
+        desired = {}
+        for category, total in categories.items():
+            for animal, amount in split(total, animals):
+                desired[(animal.id, category)] = amount
+        for identity, category in set(old) | set(desired):
+            delta = desired.get((identity, category), Decimal(0)) - old.get((identity, category), Decimal(0))
+            if delta:
+                Allocation.objects.create(event=adjustment, animal_id=identity, category=category, amount=delta)
+        participants(adjustment, list(Animal.objects.filter(id__in=old_ids | new_ids)))
+        Restriction.objects.filter(event__in=[original, *related], animal_id__in=old_ids-new_ids, superseded_by__isnull=True).update(superseded_by=adjustment)
+        days = int(original.details.get('combined_restriction_days') or 0)
+        if days:
+            for identity in new_ids-old_ids:
+                Restriction.objects.create(event=adjustment, animal_id=identity, starts_at=original.effective_at, ends_at=clock.calendar_days(original.effective_at, days, actor.property.timezone), days=days, timezone=actor.property.timezone)
+        adjustment.details.update({'effective_consumed': str(qty), 'totals': clean(categories)})
+        adjustment.save(update_fields=['details'])
+        audit(actor, 'historical_allocation_correction', adjustment, original=str(original.id), before=[str(x) for x in old_ids], after=[str(a.id) for a in animals], cost_effects=clean(categories))
         affected.append(str(adjustment.id))
     return affected
+
 
 def reverse(actor, event, data):
     original = scoped(Event, actor, data['original'])
@@ -544,6 +592,8 @@ def reverse(actor, event, data):
         a.identifiers.filter(current=True).update(current=False, retired_at=event.effective_at)
         for old in original.before['identifiers']:
             attach(event, a, old['kind'], old['value'], 'Reversal: ' + data['reason'])
+    if original.kind == 'edit_animal':
+        Allocation.objects.filter(resolved_by=original).update(resolved_by=None)
     if original.kind == 'retire':
         Inventory.objects.filter(pk=original.details['item'], property=actor.property).update(retired=original.before['retired'])
     original.reversed_by = event
@@ -605,12 +655,25 @@ def purge(actor, event, data):
     a.save()
     Participant.objects.filter(animal=a).update(snapshot={})
     # Preserve shared event totals and opaque allocation/identity reservations.
+    reserved = set(a.identifiers.values_list('value', flat=True)) | {str(a.id)}
+    def redact(value):
+        if isinstance(value, dict):
+            # Delete only this animal's imported row, never a shared cohort's payload.
+            if any(str(value.get(k, '')) in reserved for k in ['nlis', 'rfid', 'identity']):
+                return {'retention_redacted_identity': str(a.id)}
+            return {k: redact(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [redact(v) for v in value]
+        return '[retained identity reservation]' if isinstance(value, str) and value in reserved else value
     for old in Event.objects.filter(participants__animal=a).distinct():
-        old.details = {'retention_redacted': True, 'count': old.participants.count()}
-        old.before = {}
+        old.details, old.before = redact(old.details), redact(old.before)
         old.save(update_fields=['details', 'before'])
-        Audit.objects.filter(event=old).update(details={'retention_redacted': True})
-        Submission.objects.filter(event=old).update(result={'retention_redacted': True, 'event': str(old.id)})
+        for log in Audit.objects.filter(event=old):
+            log.details = redact(log.details)
+            log.save(update_fields=['details'])
+        for sub in Submission.objects.filter(event=old):
+            sub.result = redact(sub.result)
+            sub.save(update_fields=['result'])
     ImportPreview.objects.filter(property=actor.property).delete()
     return {'identity': str(a.id), 'purged': True, 'reservations_retained': True}
 
