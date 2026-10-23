@@ -11,7 +11,7 @@ Implementation authorised by the owner on 23 October 2026. Native Debian 13 + Ca
 - [x] Full overlapping two-cohort lifecycle fixture and independent totals; generated PDF/XLSX for both original cohorts and survivor-only selections.
 - [x] Browser recovery/phone/desktop evidence and operations/security checks for all 13 companion correction branches.
 - [x] Operational documentation and actual test evidence.
-- [ ] Final branch publication and draft PR; record external publication blockers honestly.
+- [x] Rebuild and legacy archive branches pushed; [draft PR #1](https://github.com/Mr-Vale/StockLOG/pull/1) opened against `main`. No merge or owner-host deployment performed.
 
 Checks and remaining limitations will be updated with actual executed results; a checked implementation item is not a claim that a VPS deployment occurred. The owner's VPS/NAS/live data must not be contacted.
 
