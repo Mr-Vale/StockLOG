@@ -1,0 +1,14 @@
+{
+  "source": "Owner's later hosting direction and Caddy question; no VPS accessed",
+  "provider": "RackNerd",
+  "virtualization": "KVM VPS",
+  "ram_gb_reported": 2,
+  "ssd_gb_reported": 35,
+  "vcpu_cores": 2,
+  "os_options": ["Debian 13", "Ubuntu 24.04"],
+  "owner_asked_about": "Caddy as web host interface",
+  "proposed_web_server": "Caddy, with Gunicorn running Django behind it",
+  "operating_system_selected_by_owner": null,
+  "vps_provisioning_or_deployment_performed": false,
+  "planning_assumption": "Earlier Python 3.9 and MySQL 5.7 restrictions belonged to the superseded HostGator plan; independent backward compatibility has not been requested for the fresh VPS"
+}

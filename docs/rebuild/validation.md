@@ -27,7 +27,7 @@ No network policy was changed.
 
 ## Not run / external gates
 
-- Direct hosting account checks: owner now reports HostGator Hatchling, Python 3.9.25, Passenger, Percona 5.7.44-48, working SSH/cron and mysqldump 5.7.44-48 plus cPanel export tools. These details have been recorded without contacting the host. Python WSGI support/SFTP, newer supported runtime or vendor maintenance, InnoDB/grants/trigger enforcement, resource limits and consistent automated export/restore remain unverified. Original Django proposal is incompatible with the specified MySQL 5.7 target.
+- Direct VPS checks: the owner subsequently selected RackNerd KVM (2 GB RAM / 35 GB SSD / 2 vCPU), Debian 13 or Ubuntu 24.04, and asked about Caddy. The current proposed stack is compatible by upstream version requirements, not yet tested on that VPS. Actual image, installed packages/services, SQL grants/constraints, resource limits, Caddy/Gunicorn/HTTPS and consistent automated backup/restore remain unverified. Prior HostGator findings remain historical, not current deployment blockers.
 - Replacement migrations, authentication, financial calculations, inventory services, concurrency, correction, idempotency or browser workflows: not implemented, so no passing-test claim.
 - Real-engine companion scenario, all 13 edge-case branches, phone/desktop tests and two cohort PDF/XLSX report pairs: unrun.
 - Server backups, authenticated archive transfer, NAS scheduler/pull, isolated restore and retention/purge: design only, unrun.
@@ -59,4 +59,4 @@ uv pip install --python /workspace/stocklog-rebuild-research/venv/bin/python \
 
 Do not recreate an existing virtualenv blindly or interpret the failed first command as completed setup. These temporary probes do not replace the tested dependency locks and engine-specific CI planned for stage one. No database service was started for the rebuild.
 
-Review requested: resolve the stack/target mismatch using the updated hosting decision before selecting stage-one implementation. Retaining MySQL 5.7 requires a backend/constraint/migration redesign; the original Python/Django stack requires compatible runtime and database versions. Known plan/tool details need not be supplied again. Enter any eventual secrets through secure configuration, never chat or Git.
+Review requested: Debian 13 (preferred) or Ubuntu 24.04, Django 5.2 with the OS MariaDB/Python versions, Caddy/Gunicorn/systemd and the 2 GB / 35 GB resource plan before stage-one coding. The VPS choice supersedes the old shared-hosting compatibility mismatch. Upstream distro repository metadata and Caddy source documentation were read; no VPS service or full application tests ran. Enter any eventual secrets through secure configuration, never chat or Git.

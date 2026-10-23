@@ -1,24 +1,24 @@
 # ADR-001: transactional Python web replacement
 
-Status: initial proposal **blocked for the supplied HostGator Python 3.9.25 / Percona 5.7 target**; not a selected deployable stack. Date: 23 October 2026. See [updated hosting decision](runtime-hosting.md).
+Status: proposed for owner review on the newly selected RackNerd KVM VPS; implementation/deployment not yet authorised. Updated 23 October 2026. See [current hosting plan](runtime-hosting.md).
 
 ## Decision
 
-Use one Django 5.2 LTS application on supported Python 3.12, with MariaDB/MySQL InnoDB and the official Django MySQL backend through mysqlclient. Use the latest supported patches when locking implementation dependencies. Django supplies authentication, password hashing, sessions, CSRF, forms, migrations, ORM and WSGI; business rules live in explicit transactional services, not model signals, templates or unrestricted Django admin edits.
+Use one Django 5.2 LTS application with distribution-managed supported Python, MariaDB InnoDB and the official Django MySQL backend through mysqlclient. Preferred OS is Debian 13: Python 3.13 and MariaDB 11.8. Ubuntu 24.04 is also compatible using Python 3.12 and MariaDB 10.11. Use distribution security updates and the latest supported Django/dependency patches when locking implementation dependencies. Django supplies authentication, password hashing, sessions, CSRF, forms, migrations, ORM and WSGI; business rules live in explicit transactional services, not model signals, templates or unrestricted Django admin edits.
 
-This initial recommendation requires a different runtime/database capability than the owner has now reported. Python 3.9 and MySQL 5.7 are both below Django 5.2's supported minimums. An owner-specified MySQL 5.7 compatibility target cannot be satisfied by disabling backend checks or selecting expired Django. If that target is retained, revise this ADR to a verified Flask/SQLAlchemy-style stack with explicit auth/session/CSRF and migration choices, while resolving the runtime maintenance prerequisite. No such revision is silently selected or implemented in this preparation task.
+The owner has moved the deployment target from HostGator shared hosting to a RackNerd KVM VPS with 2 GB RAM, 35 GB SSD and 2 vCPU. We can select compatible maintained runtimes rather than working around Python 3.9/Percona 5.7. The prior MySQL 5.7 target is treated as a HostGator-specific constraint superseded by this move; if independent backward compatibility is required later, it needs a separate decision. Preserve [the historical assessment](hostgator-assessment.md) and original supplied specification unchanged.
 
 The browser uses server-rendered responsive HTML/CSS with small same-origin JavaScript for scans/lookups, import preview, report configuration and submission recovery. Serve static assets directly; no Node server, Docker, root access, task broker, persistent worker, WebSocket or native phone app is required in production. Local browser automation/build tooling may use Node without making it a hosting dependency. Self-host assets to avoid unnecessary CDN availability requirements.
 
 Use ReportLab's paginated tables for PDF and openpyxl for XLSX structured import/export, plus defusedxml and bounded ZIP/XML parsing. This avoids requiring a headless browser or OS-level PDF renderer on shared hosting. Spreadsheet imports reject macros, unexpected archive entries, formulas as business values, oversized expansion, invalid dates and unbounded rows; exported text is written as text and protected against formula injection. No photo/document upload storage is added. Controlled restore archives are a separate admin-only maintenance path.
 
-MariaDB 10.11/11.4 LTS is the preferred database target; maintained MySQL 8.4 is an alternative requiring its own CI job before support is claimed. Framework minimums (MariaDB 10.5 / MySQL 8.0.11) are not a recommendation to use an end-of-life database. Select one actual production engine first and run acceptance/concurrency against that exact major version. SQLite is not acceptance evidence for locks, decimals or constraints.
+Use the chosen distribution's supported MariaDB package (Debian 13: 11.8; Ubuntu 24.04: 10.11) and run acceptance/concurrency against that exact major version. Maintain one primary production combination rather than promising both OS/DB variants before testing. Framework minimums (MariaDB 10.5 / MySQL 8.0.11) are not a recommendation to use end-of-life versions. SQLite is not acceptance evidence for locks, decimals or constraints.
 
 ## Components and boundaries
 
 ```mermaid
 flowchart LR
-  B[Phone or desktop browser] -->|HTTPS and session| W[cPanel WSGI entry point]
+  B[Phone or desktop browser] -->|HTTPS and session| W[Caddy and Gunicorn WSGI]
   W --> V[Django forms and views]
   V --> S[Authorised transactional services]
   S --> D[(InnoDB business ledger and projections)]
@@ -43,9 +43,9 @@ Pending recovery is browser-local input, not offline business state or an ordina
 
 ## Hosting and operational fit
 
-Use cPanel's Python application mechanism only after its actual interpreter, WSGI/Passenger integration and shared libraries are verified. No deployment performed. A plan limited to Python 3.9 requires a runtime upgrade or a different plan/host; do not pin expired Django 4.2 to fit it. A Flask release advertising Python 3.9 compatibility does not restore CPython security support. See [evidence and preflight](runtime-hosting.md).
+Use Caddy for HTTPS/static files and certificate renewal, Gunicorn for WSGI, and systemd to supervise the web process. Caddy replaces Nginx in this proposal rather than adding another proxy layer; it is not a graphical hosting control panel. Schedule daily backup management commands with cron or a systemd timer, with non-overlap locking and explicit timezone. Keep MariaDB local. cPanel/Passenger and a hosting control panel are unnecessary. Administrative provisioning access will be needed when deployment is separately authorised; the running application uses an unprivileged service account. No deployment or VPS connection has been performed.
 
-Owner-supplied evidence now identifies HostGator Hatchling shared hosting, Passenger Application Manager, Python 3.9.25, Percona 5.7.44-48, working SSH/cron and mysqldump. Python/WSGI application support and SFTP remain explicitly unconfirmed. Passenger's presence does not prove that this account can register/run a Python WSGI application. MySQL 5.7 also lacks enforced CHECK constraints: the logical schema's format/balance checks need a proved alternative (for example authorised triggers), not declarations the server ignores. Unique indexes, foreign keys and row locking still require InnoDB verification on the actual engine.
+For this 2 GB VPS start conservatively: one Gunicorn worker with two threads, bounded report/import sizes, one expensive export at a time, and a MariaDB buffer pool around 256–384 MiB subject to measurement. Do not use CPU-count worker formulas that overcommit RAM. Reserve memory for backup compression and exports; stage-one/staging checks must measure peak usage before readiness is claimed. See [resource and operations plan](vps-deployment-plan.md). These are starting settings, not measured capacity guarantees.
 
 Use bounded synchronous reports for the initial 1–10 accounts. For larger exports, use a DB job record processed by scheduled cron if proven necessary; do not require a persistent worker. Measure host request time/memory before adopting this fallback. Daily cron creates self-contained consistent archives and retains the three latest successful unique versions; NAS pull is a later, explicitly bounded task. Backups and restore details are designed in [database design](database-design.md), not executed here.
 

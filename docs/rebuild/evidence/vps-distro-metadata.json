@@ -1,0 +1,63 @@
+[
+  {
+    "source": "debian13-main",
+    "url": "https://deb.debian.org/debian/dists/trixie/main/binary-amd64/Packages.xz",
+    "packages": [
+      {
+        "Package": "gunicorn",
+        "Version": "23.0.0-1",
+        "Architecture": "all"
+      },
+      {
+        "Package": "mariadb-server",
+        "Version": "1:11.8.6-0+deb13u1",
+        "Architecture": "amd64"
+      },
+      {
+        "Package": "nginx",
+        "Version": "1.26.3-3+deb13u7",
+        "Architecture": "amd64"
+      },
+      {
+        "Package": "python3",
+        "Version": "3.13.5-1",
+        "Architecture": "amd64"
+      }
+    ],
+    "scope": "Read-only base-release repository metadata; no packages installed; security/update patch selection must use signed apt on actual VPS"
+  },
+  {
+    "source": "ubuntu2404-main",
+    "url": "https://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.xz",
+    "packages": [
+      {
+        "Package": "nginx",
+        "Version": "1.24.0-2ubuntu7",
+        "Architecture": "amd64"
+      },
+      {
+        "Package": "python3",
+        "Version": "3.12.3-0ubuntu1",
+        "Architecture": "amd64"
+      }
+    ],
+    "scope": "Read-only base-release repository metadata; no packages installed; security/update patch selection must use signed apt on actual VPS"
+  },
+  {
+    "source": "ubuntu2404-universe",
+    "url": "https://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.xz",
+    "packages": [
+      {
+        "Package": "gunicorn",
+        "Version": "20.1.0-6",
+        "Architecture": "all"
+      },
+      {
+        "Package": "mariadb-server",
+        "Version": "1:10.11.7-2ubuntu2",
+        "Architecture": "amd64"
+      }
+    ],
+    "scope": "Read-only base-release repository metadata; no packages installed; security/update patch selection must use signed apt on actual VPS"
+  }
+]
