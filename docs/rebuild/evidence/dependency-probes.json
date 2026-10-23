@@ -1,0 +1,39 @@
+{
+  "scope": "dependency probes and independent fixture arithmetic only; no StockLOG rebuild implementation or host validation",
+  "python": "3.12.14",
+  "django": "5.2.18",
+  "reportlab": "5.1.0",
+  "openpyxl": "3.1.5",
+  "wsgi_probe": "passed HTTP 200 exact response",
+  "pdf_library_probe": "passed PDF signature, not acceptance report",
+  "xlsx_library_probe": "passed in-memory round trip, not acceptance report",
+  "workbook_sheets_nonempty_cells": {
+    "INSTRUCTIONS": 22,
+    "1": 1,
+    "1A": 3,
+    "1B": 57,
+    "2": 580,
+    "3A": 334,
+    "3B": 302,
+    "3C": 27,
+    "3D": 34,
+    "4": 42,
+    "5A": 46,
+    "5B": 34,
+    "6": 31,
+    "7A": 281,
+    "7C": 34,
+    "8": 26,
+    "Additional": 0,
+    "DATA": 4751
+  },
+  "fixture_arithmetic": {
+    "april_cost": "10818",
+    "april_p_l": "9182",
+    "combined_cost": "32454",
+    "combined_p_l": "27546"
+  },
+  "database_driver": "mysqlclient 2.3.0 source build failed: missing MySQL/MariaDB development libraries/pkg-config metadata",
+  "database_engine_tests": "not run: no target database service",
+  "python39": "not installed locally; hosting availability owner-reported only"
+}
