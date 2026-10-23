@@ -27,7 +27,7 @@ No network policy was changed.
 
 ## Not run / external gates
 
-- Actual hosting interpreter/patch inventory, WSGI/Passenger mechanism, supported driver install/import, MariaDB/MySQL version/InnoDB/grants, resource limits, cron, SSH/SFTP and consistent-export capability. Owner-reported Python 3.9 is not an inspected account.
+- Direct hosting account checks: owner now reports HostGator Hatchling, Python 3.9.25, Passenger, Percona 5.7.44-48, working SSH/cron and mysqldump 5.7.44-48 plus cPanel export tools. These details have been recorded without contacting the host. Python WSGI support/SFTP, newer supported runtime or vendor maintenance, InnoDB/grants/trigger enforcement, resource limits and consistent automated export/restore remain unverified. Original Django proposal is incompatible with the specified MySQL 5.7 target.
 - Replacement migrations, authentication, financial calculations, inventory services, concurrency, correction, idempotency or browser workflows: not implemented, so no passing-test claim.
 - Real-engine companion scenario, all 13 edge-case branches, phone/desktop tests and two cohort PDF/XLSX report pairs: unrun.
 - Server backups, authenticated archive transfer, NAS scheduler/pull, isolated restore and retention/purge: design only, unrun.
@@ -59,4 +59,4 @@ uv pip install --python /workspace/stocklog-rebuild-research/venv/bin/python \
 
 Do not recreate an existing virtualenv blindly or interpret the failed first command as completed setup. These temporary probes do not replace the tested dependency locks and engine-specific CI planned for stage one. No database service was started for the rebuild.
 
-Review requested: the proposed Python/Django stack, explicit design policies in ADR-001, and stage-one scope. Required outside information is limited to non-secret hosting capability evidence; enter any eventual secrets through secure configuration, never chat or Git.
+Review requested: resolve the stack/target mismatch using the updated hosting decision before selecting stage-one implementation. Retaining MySQL 5.7 requires a backend/constraint/migration redesign; the original Python/Django stack requires compatible runtime and database versions. Known plan/tool details need not be supplied again. Enter any eventual secrets through secure configuration, never chat or Git.

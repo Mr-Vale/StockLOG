@@ -2,6 +2,10 @@
 
 Status: proposed logical schema and invariants, not implemented DDL/migrations. Every table below is new; there is no legacy import. Target one proven MariaDB/MySQL InnoDB version, strict SQL mode, utf8mb4, enforced foreign keys and checks. Exact DDL/index portability must be tested on that engine in stage one.
 
+**Hosting update:** the owner now requires MySQL 5.7 compatibility and reports Percona 5.7.44-48. The initial Django mapping is incompatible with that target. MySQL 5.7 parses CHECK declarations without enforcing them, so every database-level invariant described below requires a documented implementation on that engine (e.g. BEFORE INSERT/UPDATE triggers with SIGNAL and sufficient grants). Do not claim these checks exist merely because a migration emits CHECK SQL. Unique/FK constraints and transactional InnoDB locks remain applicable, but trigger creation, dump inclusion/restore, temporal rules and direct-invalid-write rejection must be proved against Percona 5.7 before accepting this design. If necessary grants or enforcement mechanisms are unavailable, that is a genuine blocker to the current database-invariant proposal; do not silently weaken the agreed rules.
+
+Django-specific references below (`transaction.atomic()`, Django account models and model fields) describe the initial, now-blocked framework mapping. The logical identities, ledger, exact arithmetic, permissions and temporal invariants remain requirements for any revised backend. A Flask/SQLAlchemy path must explicitly replace those framework adapters with equivalent tested transaction/auth/migration components; the references are not a claim that Django can run on 5.7.
+
 ## Types, scope and time
 
 - Stable business identity keys are UUIDs stored as canonical strings initially; internal row IDs may be BIGINT. No financial identity depends on a replaceable tag. References to purged animals can retain an opaque identity tombstone without their descriptive record.

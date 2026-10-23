@@ -1,10 +1,12 @@
 # ADR-001: transactional Python web replacement
 
-Status: proposed for owner review, conditional on hosting preflight. Date: 23 October 2026.
+Status: initial proposal **blocked for the supplied HostGator Python 3.9.25 / Percona 5.7 target**; not a selected deployable stack. Date: 23 October 2026. See [updated hosting decision](runtime-hosting.md).
 
 ## Decision
 
 Use one Django 5.2 LTS application on supported Python 3.12, with MariaDB/MySQL InnoDB and the official Django MySQL backend through mysqlclient. Use the latest supported patches when locking implementation dependencies. Django supplies authentication, password hashing, sessions, CSRF, forms, migrations, ORM and WSGI; business rules live in explicit transactional services, not model signals, templates or unrestricted Django admin edits.
+
+This initial recommendation requires a different runtime/database capability than the owner has now reported. Python 3.9 and MySQL 5.7 are both below Django 5.2's supported minimums. An owner-specified MySQL 5.7 compatibility target cannot be satisfied by disabling backend checks or selecting expired Django. If that target is retained, revise this ADR to a verified Flask/SQLAlchemy-style stack with explicit auth/session/CSRF and migration choices, while resolving the runtime maintenance prerequisite. No such revision is silently selected or implemented in this preparation task.
 
 The browser uses server-rendered responsive HTML/CSS with small same-origin JavaScript for scans/lookups, import preview, report configuration and submission recovery. Serve static assets directly; no Node server, Docker, root access, task broker, persistent worker, WebSocket or native phone app is required in production. Local browser automation/build tooling may use Node without making it a hosting dependency. Self-host assets to avoid unnecessary CDN availability requirements.
 
@@ -42,6 +44,8 @@ Pending recovery is browser-local input, not offline business state or an ordina
 ## Hosting and operational fit
 
 Use cPanel's Python application mechanism only after its actual interpreter, WSGI/Passenger integration and shared libraries are verified. No deployment performed. A plan limited to Python 3.9 requires a runtime upgrade or a different plan/host; do not pin expired Django 4.2 to fit it. A Flask release advertising Python 3.9 compatibility does not restore CPython security support. See [evidence and preflight](runtime-hosting.md).
+
+Owner-supplied evidence now identifies HostGator Hatchling shared hosting, Passenger Application Manager, Python 3.9.25, Percona 5.7.44-48, working SSH/cron and mysqldump. Python/WSGI application support and SFTP remain explicitly unconfirmed. Passenger's presence does not prove that this account can register/run a Python WSGI application. MySQL 5.7 also lacks enforced CHECK constraints: the logical schema's format/balance checks need a proved alternative (for example authorised triggers), not declarations the server ignores. Unique indexes, foreign keys and row locking still require InnoDB verification on the actual engine.
 
 Use bounded synchronous reports for the initial 1–10 accounts. For larger exports, use a DB job record processed by scheduled cron if proven necessary; do not require a persistent worker. Measure host request time/memory before adopting this fallback. Daily cron creates self-contained consistent archives and retains the three latest successful unique versions; NAS pull is a later, explicitly bounded task. Backups and restore details are designed in [database design](database-design.md), not executed here.
 
