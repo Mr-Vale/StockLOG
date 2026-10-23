@@ -1,3 +1,5 @@
+> Implementation was subsequently authorised. This document records preparation decisions; current status, tests and the sole native Debian 13/Caddy deployment are in [the implementation checklist](../IMPLEMENTATION.md) and [operational installation guide](../operations/INSTALL.md). HostGator/cPanel, Python 3.9, MySQL 5.7 and Ubuntu deployment compatibility are superseded requirements.
+
 # Implementation stages and requirements traceability
 
 This task completes **preparation only**. No checkbox below implies application functionality exists. Stage numbering follows the supplied replacement prompt; the immediate next coding task is stage one after review. Source requirements remain in the unmodified [specification](../specifications/StockLOG_rebuild_agent_prompt.md), and synthetic assumptions/expected totals remain in the independent [scenario](../testing/StockLOG_acceptance_scenario.md).

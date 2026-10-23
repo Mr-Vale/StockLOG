@@ -1,3 +1,5 @@
+> Implementation was subsequently authorised. This document records preparation decisions; current status, tests and the sole native Debian 13/Caddy deployment are in [the implementation checklist](../IMPLEMENTATION.md) and [operational installation guide](../operations/INSTALL.md). HostGator/cPanel, Python 3.9, MySQL 5.7 and Ubuntu deployment compatibility are superseded requirements.
+
 # Preparation validation and limits
 
 Date: 23 October 2026. Scope: repository preservation, source inspection, design and dependency feasibility. No replacement functionality has been implemented. No hosting deployment, NAS connection or live database operation was performed.

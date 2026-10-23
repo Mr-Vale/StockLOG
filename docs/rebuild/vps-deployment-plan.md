@@ -1,3 +1,5 @@
+> Implementation was subsequently authorised. This document records preparation decisions; current status, tests and the sole native Debian 13/Caddy deployment are in [the implementation checklist](../IMPLEMENTATION.md) and [operational installation guide](../operations/INSTALL.md). HostGator/cPanel, Python 3.9, MySQL 5.7 and Ubuntu deployment compatibility are superseded requirements.
+
 # RackNerd VPS deployment and resource plan
 
 Proposal only, updated 23 October 2026. Target: RackNerd KVM, 2 GB RAM / 35 GB SSD / 2 vCPU. The owner confirms the VPS has been set up with Debian 13. No commands here have been executed by the agent on the VPS and no live data/NAS has been accessed. Package/service setup and resource validation remain outstanding.

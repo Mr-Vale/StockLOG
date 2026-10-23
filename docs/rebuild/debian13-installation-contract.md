@@ -1,3 +1,5 @@
+> Implementation was subsequently authorised. This document records preparation decisions; current status, tests and the sole native Debian 13/Caddy deployment are in [the implementation checklist](../IMPLEMENTATION.md) and [operational installation guide](../operations/INSTALL.md). HostGator/cPanel, Python 3.9, MySQL 5.7 and Ubuntu deployment compatibility are superseded requirements.
+
 # Clean Debian 13 installation contract
 
 Owner requirement: the VPS is a clean Debian 13 installation; **all required packages must be installed by the StockLOG installation process**. Do not make the owner assemble undocumented prerequisites. This is a delivery requirement for the future installer, not an implemented or tested installer in this preparation task.

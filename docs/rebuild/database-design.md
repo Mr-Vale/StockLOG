@@ -1,3 +1,5 @@
+> Implementation was subsequently authorised. This document records preparation decisions; current status, tests and the sole native Debian 13/Caddy deployment are in [the implementation checklist](../IMPLEMENTATION.md) and [operational installation guide](../operations/INSTALL.md). HostGator/cPanel, Python 3.9, MySQL 5.7 and Ubuntu deployment compatibility are superseded requirements.
+
 # Database design: identities, history, allocations and operations
 
 Status: proposed logical schema and invariants, not implemented DDL/migrations. Every table below is new; there is no legacy import. Target one proven MariaDB/MySQL InnoDB version, strict SQL mode, utf8mb4, enforced foreign keys and checks. Exact DDL/index portability must be tested on that engine in stage one.

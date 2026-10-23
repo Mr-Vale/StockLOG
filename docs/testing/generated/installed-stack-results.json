@@ -1,0 +1,23 @@
+{
+  "scope": "Isolated Debian 13 container; no owner VPS/NAS",
+  "limits": {
+    "memory_bytes": 2147483648,
+    "cpus": 2
+  },
+  "native_install": "passed clean base; repeat preserved config/key/account",
+  "systemd_unit_verification": "passed systemd-analyze verify; PID1 service boot NOT tested",
+  "caddy_gunicorn_database_health": "passed HTTPS 200",
+  "static_routing": "passed",
+  "https_authenticated_login_secure_cookie": "passed",
+  "tls_validation": "explicit local Caddy CA trust; no TLS verification disabled",
+  "public_acme": "NOT tested; internal localhost CA only",
+  "encrypted_backup": "passed installed unprivileged management command",
+  "fresh_isolated_restore": "passed native maintenance script and exact logical row-dump equality across all tables",
+  "source_database_retained": true,
+  "owner_vps_connected": false,
+  "owner_nas_connected": false,
+  "python": "Python 3.13.5",
+  "mariadb": "11.8.6-MariaDB-0+deb13u1 from Debian",
+  "caddy": "2.6.2",
+  "restricted_backup_reader": "passed real unprivileged OS account latest/get and ciphertext checksum; no SSH network/NAS connection"
+}

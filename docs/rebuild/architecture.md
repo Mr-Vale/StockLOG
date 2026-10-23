@@ -1,3 +1,5 @@
+> Implementation was subsequently authorised. This document records preparation decisions; current status, tests and the sole native Debian 13/Caddy deployment are in [the implementation checklist](../IMPLEMENTATION.md) and [operational installation guide](../operations/INSTALL.md). HostGator/cPanel, Python 3.9, MySQL 5.7 and Ubuntu deployment compatibility are superseded requirements.
+
 # ADR-001: transactional Python web replacement
 
 Status: proposed for owner review on the newly selected RackNerd KVM VPS; implementation/deployment not yet authorised. Updated 23 October 2026. See [current hosting plan](runtime-hosting.md).
