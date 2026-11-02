@@ -27,7 +27,7 @@ All four browser tests passed, including desktop/mobile layout, the controlled s
 
 ## Outstanding verification
 
-- This environment has no Debian 13/systemd test host or Docker. Fresh Debian installation, reboot persistence, real ACME issuance and public DNS checks were not executed.
+- The new installer CI job runs the interactive installer in a fresh Debian 13 container, checks administrator creation and rerun refusal. Its result must be reviewed. It uses `--no-start`: systemd PID-1 startup, reboot persistence, real ACME issuance and public DNS still require a server test.
 - MariaDB could not be installed locally; the GitHub run supplies real-engine constraint/concurrency and restore execution evidence. Review the follow-up CI result for the corrected restore assertion.
 - Chromium download failed with a truncated archive. The remote browser cannot reach the local Django server (its loopback endpoint returns a bearer-token gateway error). Local browser checks remained blocked; GitHub CI subsequently supplied the browser results and screenshot artifacts described above.
 - A browser test now covers selection, the controlled client timer and desktop/mobile screenshots. The existing PR workflow runs Debian/MariaDB/Chromium and uploads screenshots/reports under the `synthetic-acceptance-reports` artifact. Review those results before merging or installing.
