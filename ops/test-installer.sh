@@ -10,15 +10,18 @@ docker exec -i "$INSTALLER_CONTAINER" python3 - <<'PY'
 import pexpect, sys
 child=pexpect.spawn('bash', ['/src/ops/install-debian13.sh', '--no-start'], encoding='utf-8', timeout=900)
 child.logfile_read=sys.stdout
-child.expect('Public domain name .*: ')
+child.expect('Public domain name .*: ', timeout=20)
 child.sendline('stocklog.example.test')
-child.expect('Initial administrator username: ')
+child.expect('Initial administrator username: ', timeout=300)
 child.sendline('installer-test-admin')
-child.expect('Initial administrator password: ')
+child.expect('Initial administrator password: ', timeout=30)
 child.sendline('Disposable-Installer-Check-2026')
-child.expect('Repeat password: ')
+child.expect('Repeat password: ', timeout=30)
 child.sendline('Disposable-Installer-Check-2026')
-child.expect(pexpect.EOF)
+# Background Debian service helpers can inherit the PTY even after bash exits.
+# Match completion, then give bash a short exit window instead of waiting 15 minutes for PTY closure.
+child.expect('Verify DNS/HTTPS, first sign-in, backup and isolated restore before operational use.', timeout=60)
+child.expect(pexpect.EOF, timeout=5)
 child.close()
 assert child.exitstatus == 0, f'Installer exited {child.exitstatus}'
 PY
