@@ -176,6 +176,37 @@ def test_property_homepage_screenshots_and_transition(farm, live_server):
 
     p, admin, b, _ = farm
     second = PIC.objects.create(property=p, number="TEST0002")
+    from datetime import date, timedelta
+    from .test_foundations import arrival, run
+
+    first_mob = run(admin, "mob", {"name": "First PIC mob"})["mob"]
+    arrival(
+        admin,
+        tag="HOME000000000001",
+        breed="Angus",
+        sex="F",
+        mob=first_mob,
+        dob=(date.today() - timedelta(days=30)).isoformat(),
+    )
+    admin.pic = second
+    second_mob = run(admin, "mob", {"name": "Second PIC mob"})["mob"]
+    for i, (breed, sex, days) in enumerate(
+        [
+            ("Angus", "M", 60),
+            ("Angus", "F", 180),
+            ("Hereford", "STEER", 500),
+            ("Hereford", "F", 900),
+        ],
+        start=2,
+    ):
+        arrival(
+            admin,
+            tag=f"HOME{i:012d}",
+            breed=breed,
+            sex=sex,
+            mob=second_mob,
+            dob=(date.today() - timedelta(days=days)).isoformat(),
+        )
     # Unsaved users must select first. Admin fixtures keep a valid saved default.
     b.property = None
     b.pic = None
@@ -204,8 +235,6 @@ def test_property_homepage_screenshots_and_transition(farm, live_server):
         page.clock.fast_forward(14000)
         expect(page.locator("#switching")).to_be_visible()
         # Advance server session deadline as well; no production test hook is introduced.
-        from django.contrib.sessions.models import Session
-
         session = page.context.cookies()
         cookie = next(c["value"] for c in session if c["name"] == "sessionid")
 

@@ -13,6 +13,8 @@ from herd.models import (
     Event,
     Inventory,
     Property,
+    PIC,
+    Presence,
     ReportTemplate,
 )
 
@@ -21,7 +23,9 @@ from .test_foundations import run
 
 
 @pytest.mark.django_db(transaction=True)
-def test_encrypted_rotation_failure_and_fresh_database_restore(farm, tmp_path, monkeypatch):
+def test_encrypted_rotation_failure_and_fresh_database_restore(
+    farm, tmp_path, monkeypatch
+):
     p, a, b, c = farm
     with clock.at(T):
         mob = setup_mob(b, 2)
@@ -37,7 +41,9 @@ def test_encrypted_rotation_failure_and_fresh_database_restore(farm, tmp_path, m
         )
     identity = tmp_path / "recovery.key"
     subprocess.run(["age-keygen", "-o", str(identity)], check=True, capture_output=True)
-    recipient = subprocess.check_output(["age-keygen", "-y", str(identity)], text=True).strip()
+    recipient = subprocess.check_output(
+        ["age-keygen", "-y", str(identity)], text=True
+    ).strip()
     monkeypatch.setenv("STOCKLOG_AGE_RECIPIENT", recipient)
     monkeypatch.setenv("STOCKLOG_BACKUPS", str(tmp_path / "backups"))
     expected = {
@@ -47,6 +53,9 @@ def test_encrypted_rotation_failure_and_fresh_database_restore(farm, tmp_path, m
             Account,
             Audit,
             Property,
+            PIC,
+            Presence,
+            Account.properties.through,
             Event,
             Inventory,
             Allocation,
@@ -57,10 +66,14 @@ def test_encrypted_rotation_failure_and_fresh_database_restore(farm, tmp_path, m
     for _ in range(4):
         manifest = backups.create_backup()
         hashes.append(manifest["archive_id"])
-        assert backups.sha(backups.archive_path(manifest["archive_id"])) == manifest["sha256"]
+        assert (
+            backups.sha(backups.archive_path(manifest["archive_id"]))
+            == manifest["sha256"]
+        )
     folder = backups.backup_dir()
     assert (
-        len(list(folder.glob("*.age"))) == 3 and not (folder / (hashes[0] + ".tar.gz.age")).exists()
+        len(list(folder.glob("*.age"))) == 3
+        and not (folder / (hashes[0] + ".tar.gz.age")).exists()
     )
     assert backups.latest()["archive_id"] == hashes[-1]
     prior = set(folder.glob("*.age"))
@@ -87,7 +100,7 @@ def test_encrypted_rotation_failure_and_fresh_database_restore(farm, tmp_path, m
     connection.settings_dict["NAME"] = db_name
     try:
         restored = backups.restore_backup(encrypted, identity, db_name)
-        assert restored["schema_version"] == 1
+        assert restored["schema_version"] == 2
         for model, rows in [
             (m, expected[m.__name__])
             for m in [
@@ -95,6 +108,9 @@ def test_encrypted_rotation_failure_and_fresh_database_restore(farm, tmp_path, m
                 Account,
                 Audit,
                 Property,
+                PIC,
+                Presence,
+                Account.properties.through,
                 Event,
                 Inventory,
                 Allocation,
@@ -102,7 +118,9 @@ def test_encrypted_rotation_failure_and_fresh_database_restore(farm, tmp_path, m
             ]
         ]:
             assert list(model.objects.order_by("pk").values()) == rows, model.__name__
-        assert Account.objects.get(username="B").check_password("Synthetic-Test-Password-2026")
+        assert Account.objects.get(username="B").check_password(
+            "Synthetic-Test-Password-2026"
+        )
     finally:
         connection.close()
         connection.settings_dict["NAME"] = original_name

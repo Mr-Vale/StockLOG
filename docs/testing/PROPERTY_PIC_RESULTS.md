@@ -19,11 +19,17 @@ Functional suite: **37 passed, 1 production-engine test deselected**. The indepe
 
 New tests cover first-admin setup without a property, atomic property/PIC creation, access revocation, malformed/cross-property selection, shared inventory across PICs, isolation from another property, saved defaults, a controlled 15-second deadline, stale forms and signed confirmations, chart boundaries/preferences, audited access changes and repurchase into another PIC with continuous identity/allocations.
 
+## GitHub Debian/MariaDB/browser run
+
+[Run 41439046186](https://github.com/Mr-Vale/StockLOG/actions/runs/41439046186) executed the full suite on Debian 13, Python 3.13.5 and MariaDB with Chromium: **46 passed, 1 failed**. The only failure was an old backup test asserting schema version 1 after the deliberate version-2 bump. The actual encrypted restore completed before that assertion. The test now asserts version 2 and also compares PICs, presence cycles and property-access grants after restore. A follow-up CI run is required for the final result.
+
+All four browser tests passed, including desktop/mobile layout, the controlled switch timer, login, CSRF, offline recovery and account separation. Real-engine identity constraints and concurrency tests passed. The run generated selection/desktop/mobile screenshot artifacts; a follow-up fixture adds cattle so chart examples show non-empty data.
+
 ## Outstanding verification
 
 - This environment has no Debian 13/systemd test host or Docker. Fresh Debian installation, reboot persistence, real ACME issuance and public DNS checks were not executed.
-- MariaDB packages could not be installed in this workspace. MariaDB 11.8 constraints, concurrency and encrypted database backup/restore still require the existing Debian isolated CI suite.
-- Chromium download failed with a truncated archive. The remote browser cannot reach the local Django server (its loopback endpoint returns a bearer-token gateway error). Therefore no new desktop/mobile screenshots or live JavaScript browser results are claimed here.
+- MariaDB could not be installed locally; the GitHub run supplies real-engine constraint/concurrency and restore execution evidence. Review the follow-up CI result for the corrected restore assertion.
+- Chromium download failed with a truncated archive. The remote browser cannot reach the local Django server (its loopback endpoint returns a bearer-token gateway error). Local browser checks remained blocked; GitHub CI subsequently supplied the browser results and screenshot artifacts described above.
 - A browser test now covers selection, the controlled client timer and desktop/mobile screenshots. The existing PR workflow runs Debian/MariaDB/Chromium and uploads screenshots/reports under the `synthetic-acceptance-reports` artifact. Review those results before merging or installing.
 
 The installer command is implemented and shell-validated, but is **not yet verified end-to-end on clean Debian 13**. Keep the PR in draft until production-engine and browser CI checks are reviewed. This release deliberately replaces the initial schema: do not apply it to a populated StockLOG 1 database.
