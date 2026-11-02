@@ -48,6 +48,10 @@ journalctl -u stocklog-backup -n 50 --no-pager
 
 The backup timer runs daily at 16:15 UTC with up to five minutes jitter and missed-run catch-up. Server and NAS each retain three latest successful unique archives. See [backup/restore instructions](BACKUP_RESTORE.md). StockLOG 2 backups have schema version 2 and require matching release/schema fingerprints. Old StockLOG 1 backups must be restored with their matching old release, not this schema.
 
+## Caddy configuration permissions
+
+The installer explicitly makes its Caddy configuration files `root:caddy` with mode `0640`, with a traversable `sites-enabled` directory. It validates the complete configuration as the `caddy` service user before restarting services. This catches unreadable imported files that root validation would miss. Application secrets remain restricted to the StockLOG application group.
+
 ## Failures and reruns
 
 The installer reports the failed command line and stops. Fix the underlying error, keeping private configuration and the database. Before a current release has been activated, the same installation command can resume preparation and preserves generated credentials; an existing administrator is never reset. Once `/opt/stocklog/current` exists, reruns refuse to replace the installation. This is a fresh-install entry point, not an automatic updater.
