@@ -12,6 +12,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.db.models import Q, Sum
 
+from .context import scope, validate_context
 from . import clock
 from .models import (
     Account,
@@ -77,7 +78,9 @@ def split(total, animals):
         units = int(rounded(abs(total)) / QTY)
         per, remainder = divmod(units, len(ordered))
         sign = -1 if total < 0 else 1
-        return [(a, sign * (per + (i < remainder)) * QTY) for i, a in enumerate(ordered)]
+        return [
+            (a, sign * (per + (i < remainder)) * QTY) for i, a in enumerate(ordered)
+        ]
 
 
 def audit(actor, action, event=None, **details):
@@ -97,7 +100,7 @@ def administrator(actor):
 
 def scoped(model, actor, pk):
     try:
-        return model.objects.get(property=actor.property, pk=pk)
+        return scope(model, actor).get(pk=pk)
     except (model.DoesNotExist, ValueError, ValidationError):
         raise ValidationError("Record is unavailable in this property.")
 
@@ -107,9 +110,9 @@ def instant(event):
 
 
 def intervals_at(queryset, at, order=2147483647):
-    return queryset.filter(Q(start__lt=at) | Q(start=at, start_order__lte=order)).filter(
-        Q(end__isnull=True) | Q(end__gt=at) | Q(end=at, end_order__gt=order)
-    )
+    return queryset.filter(
+        Q(start__lt=at) | Q(start=at, start_order__lte=order)
+    ).filter(Q(end__isnull=True) | Q(end__gt=at) | Q(end=at, end_order__gt=order))
 
 
 def present(animal, at, order=2147483647):
@@ -118,13 +121,17 @@ def present(animal, at, order=2147483647):
 
 def require_present(animal, at, order=2147483647):
     if animal.purged or not present(animal, at, order):
-        raise ValidationError(f"{animal.label} was off-property or dead at the event time.")
+        raise ValidationError(
+            f"{animal.label} was off-property or dead at the event time."
+        )
 
 
 def find_animal(actor, identifier):
     value = str(identifier).strip().upper()
     found = (
-        Identifier.objects.filter(value=value, animal__property=actor.property)
+        Identifier.objects.filter(
+            value=value, animal__property=actor.property, animal__pic_id=actor.pic_id
+        )
         .select_related("animal")
         .first()
     )
@@ -135,11 +142,13 @@ def find_animal(actor, identifier):
 
 def members(actor, mob_id, at, order=2147483647):
     mob = scoped(Mob, actor, mob_id)
-    ids = intervals_at(Membership.objects.filter(mob=mob, superseded=False), at, order).values_list(
-        "animal_id", flat=True
-    )
+    ids = intervals_at(
+        Membership.objects.filter(mob=mob, superseded=False), at, order
+    ).values_list("animal_id", flat=True)
     animals = list(
-        Animal.objects.filter(property=actor.property, id__in=ids, purged=False).order_by("id")
+        Animal.objects.filter(
+            property=actor.property, id__in=ids, purged=False
+        ).order_by("id")
     )
     for a in animals:
         require_present(a, at, order)
@@ -193,7 +202,9 @@ def validate_identifier(kind, value):
         or kind == "rfid"
         and not re.fullmatch(r"[0-9]{15}", value)
     ):
-        raise ValidationError("NLIS must be exactly 16 characters; RFID exactly 15 ASCII digits.")
+        raise ValidationError(
+            "NLIS must be exactly 16 characters; RFID exactly 15 ASCII digits."
+        )
     return value
 
 
@@ -204,9 +215,9 @@ def attach(event, animal, kind, value, reason=""):
         raise ValidationError(
             "Identifier is permanently reserved to another animal. Administrator conflict review required; animals are never merged."
         )
-    Identifier.objects.filter(animal=animal, kind=kind, current=True).exclude(value=value).update(
-        current=False, retired_at=event.effective_at
-    )
+    Identifier.objects.filter(animal=animal, kind=kind, current=True).exclude(
+        value=value
+    ).update(current=False, retired_at=event.effective_at)
     if old:
         old.current, old.retired_at = True, None
         old.save(update_fields=["current", "retired_at"])
@@ -228,15 +239,19 @@ def execute(actor, key, kind, data, expected_version=None):
         raise ValidationError("A stable submission identifier is required.")
     payload = clean(data)
     digest = hashlib.sha256(
-        json.dumps({"kind": kind, "data": payload}, sort_keys=True).encode()
+        json.dumps(
+            {"kind": kind, "pic": actor.pic_id, "data": payload}, sort_keys=True
+        ).encode()
     ).hexdigest()
     with transaction.atomic(), localcontext() as ctx:
         ctx.prec = 60
         prop = Property.objects.select_for_update().get(pk=actor.property_id)
-        actor = Account.objects.get(pk=actor.pk)
-        if not actor.is_active or actor.property_id != prop.id:
-            raise PermissionDenied("Account access changed; no action was executed.")
-        prior = Submission.objects.filter(property=prop, actor=actor, key=str(key)).first()
+        fresh = validate_context(actor)
+        fresh.property, fresh.pic = prop, actor.pic
+        actor = fresh
+        prior = Submission.objects.filter(
+            property=prop, actor=actor, key=str(key)
+        ).first()
         if prior:
             if prior.digest != digest:
                 raise ValidationError(
@@ -254,6 +269,7 @@ def execute(actor, key, kind, data, expected_version=None):
         if not handler:
             raise ValidationError("Unknown operation.")
         event = Event.objects.create(
+            pic=actor.pic,
             property=prop,
             actor=actor,
             kind=kind,
@@ -283,7 +299,9 @@ def preview(actor, kind, data):
     with transaction.atomic():
         prop = Property.objects.select_for_update().get(pk=actor.property_id)
         version = prop.version
-        result = execute(actor, "preview-" + __import__("uuid").uuid4().hex, kind, data, version)
+        result = execute(
+            actor, "preview-" + __import__("uuid").uuid4().hex, kind, data, version
+        )
         result["allocations"] = list(
             Allocation.objects.filter(event_id=result["event"]).values(
                 "animal_id", "category", "amount"
@@ -294,6 +312,9 @@ def preview(actor, kind, data):
                 "item_id", "quantity", "value"
             )
         )
+        result["animal_labels"] = [
+            a.label for a in Animal.objects.filter(pk__in=result.get("animals", []))
+        ]
         for allocation in result["allocations"]:
             allocation["animal"] = Animal.objects.get(pk=allocation["animal_id"]).label
         for posting in result["stock"]:
@@ -317,7 +338,9 @@ def register(actor, event, data):
             if val:
                 v = validate_identifier(kind, val)
                 if (kind, v) in seen:
-                    raise ValidationError("Duplicate identifier within the selected import.")
+                    raise ValidationError(
+                        "Duplicate identifier within the selected import."
+                    )
                 seen.add((kind, v))
         at = int(row.get("effective_at", event.effective_at))
         if at > clock.now():
@@ -355,7 +378,11 @@ def register(actor, event, data):
                 raise ValidationError(
                     "An identifier is already permanently reserved; choose repurchase only for the same exited animal."
                 )
-            a = scoped(Animal, actor, linked[0])
+            a = Animal.objects.filter(pk=linked[0], property=actor.property).first()
+            if a is None:
+                raise ValidationError(
+                    "This identifier belongs to another property; administrator review is required."
+                )
             if a.purged:
                 raise ValidationError(
                     "This permanently reserved identity was retention-redacted. Administrator review/authoritative recovery is required before repurchase; it cannot become a new animal."
@@ -373,8 +400,10 @@ def register(actor, event, data):
                 )
         else:
             if source == "repurchase":
-                raise ValidationError("Repurchase requires an existing animal identity.")
-            a = Animal.objects.create(property=actor.property)
+                raise ValidationError(
+                    "Repurchase requires an existing animal identity."
+                )
+            a = Animal.objects.create(property=actor.property, pic=actor.pic)
         for field in ["breed", "sex", "mother_nlis"]:
             if row.get(field):
                 setattr(a, field, row[field])
@@ -393,19 +422,32 @@ def register(actor, event, data):
                 raise ValidationError("Age cannot be negative.")
             a.estimated_weeks, a.age_reference = weeks, at
         a.status = "active"
+        a.pic = actor.pic
         a.save()
         if nlis:
             attach(event, a, "nlis", nlis)
         if rfid:
             attach(event, a, "rfid", rfid)
         visit = Presence.objects.create(
-            animal=a, start=at, start_order=event.effective_order, arrival=event
+            animal=a,
+            pic=actor.pic,
+            start=at,
+            start_order=event.effective_order,
+            arrival=event,
         )
-        allocate(event, [a], -(cost or 0), "purchase", unknown=cost is None, presence=visit)
+        allocate(
+            event, [a], -(cost or 0), "purchase", unknown=cost is None, presence=visit
+        )
         if row.get("mob"):
             mob = scoped(Mob, actor, row["mob"])
+            if mob.retired:
+                raise ValidationError("Select a current mob.")
             Membership.objects.create(
-                animal=a, mob=mob, start=at, start_order=event.effective_order, event=event
+                animal=a,
+                mob=mob,
+                start=at,
+                start_order=event.effective_order,
+                event=event,
             )
         result.append(str(a.id))
     return {"animals": result, "count": len(result)}
@@ -413,9 +455,19 @@ def register(actor, event, data):
 
 def mob_create(actor, event, data):
     name = str(data.get("name", "")).strip()
+    if data.get("retire_mob"):
+        mob = scoped(Mob, actor, data["retire_mob"])
+        if Membership.objects.filter(
+            mob=mob, end__isnull=True, superseded=False
+        ).exists():
+            raise ValidationError("Move all cattle out before retiring a mob.")
+        event.before = {"retired": mob.retired}
+        mob.retired = True
+        mob.save(update_fields=["retired"])
+        return {"retired_mob": mob.pk}
     if not name:
         raise ValidationError("Mob name is required.")
-    m = Mob.objects.create(property=actor.property, name=name)
+    m = Mob.objects.create(property=actor.property, pic=actor.pic, name=name)
     return {"mob": m.id, "name": m.name}
 
 
@@ -426,14 +478,29 @@ def move(actor, event, data):
         administrator(actor)
         if not data.get("administration"):
             raise ValidationError("Use the historical administration workflow.")
-    destination = scoped(Mob, actor, data["destination"]) if data.get("destination") else None
+    destination = (
+        scoped(Mob, actor, data["destination"]) if data.get("destination") else None
+    )
+    if destination and destination.retired:
+        raise ValidationError("Select a current destination mob.")
     animals = targets(actor, data, at, event.effective_order)
+    identifiers = data.get("animals") or []
+    if len(identifiers) != len(set(str(v).strip().upper() for v in identifiers)):
+        raise ValidationError(
+            "Remove duplicate animal identifiers before transferring."
+        )
+    if len(animals) != len(identifiers) and identifiers:
+        raise ValidationError(
+            "Two identifiers refer to the same animal. Select it only once."
+        )
     before = []
     for a in animals:
         rows = list(
             a.memberships.filter(superseded=False)
             .filter(
-                Q(end__isnull=True) | Q(end__gt=at) | Q(end=at, end_order__gt=event.effective_order)
+                Q(end__isnull=True)
+                | Q(end__gt=at)
+                | Q(end=at, end_order__gt=event.effective_order)
             )
             .order_by("start", "start_order")
         )
@@ -494,7 +561,9 @@ def replace_tag(actor, event, data):
                 "Locked lifecycle records require an explicit administrator correction reason."
             )
     require_present(a, event.effective_at, event.effective_order)
-    event.before = {"identifiers": list(a.identifiers.filter(current=True).values("kind", "value"))}
+    event.before = {
+        "identifiers": list(a.identifiers.filter(current=True).values("kind", "value"))
+    }
     for kind in ["nlis", "rfid"]:
         if data.get(kind):
             attach(event, a, kind, data[kind], data["reason"])
@@ -530,9 +599,11 @@ def edit_animal(actor, event, data):
             after = (
                 int(data[field])
                 if field == "estimated_weeks"
-                else date.fromisoformat(data[field])
-                if field == "dob"
-                else str(data[field])
+                else (
+                    date.fromisoformat(data[field])
+                    if field == "dob"
+                    else str(data[field])
+                )
             )
             if field == "estimated_weeks" and after < 0:
                 raise ValidationError("Age cannot be negative.")
@@ -550,10 +621,16 @@ def edit_animal(actor, event, data):
         a.age_reference = event.effective_at
     if data.get("purchase_cost") not in [None, ""]:
         price = number(data["purchase_cost"], nonnegative=True)
-        presence = a.presence.filter(start__lte=event.effective_at).order_by("-start").first()
-        purchase = a.allocations.filter(category="purchase", event=presence.arrival).first()
+        presence = (
+            a.presence.filter(start__lte=event.effective_at).order_by("-start").first()
+        )
+        purchase = a.allocations.filter(
+            category="purchase", event=presence.arrival
+        ).first()
         if purchase is None:
-            raise ValidationError("No purchase record is available for this presence cycle.")
+            raise ValidationError(
+                "No purchase record is available for this presence cycle."
+            )
         prior = -sum(
             a.allocations.filter(category="purchase", presence=presence).values_list(
                 "amount", flat=True
@@ -576,7 +653,9 @@ def depart(actor, event, data):
     if death and not data.get("reason"):
         raise ValidationError("Death reason is required.")
     if not death and (
-        not data.get("destination_pic") or not data.get("nvd") or data.get("price") in [None, ""]
+        not data.get("destination_pic")
+        or not data.get("nvd")
+        or data.get("price") in [None, ""]
     ):
         raise ValidationError("Sales require price, destination PIC and NVD.")
     restrictions = []
@@ -605,13 +684,17 @@ def depart(actor, event, data):
                 "animal": str(a.id),
                 "presence": p.id,
                 "memberships": list(
-                    a.memberships.filter(superseded=False, end__isnull=True).values_list(
-                        "id", flat=True
-                    )
+                    a.memberships.filter(
+                        superseded=False, end__isnull=True
+                    ).values_list("id", flat=True)
                 ),
             }
         )
-        p.end, p.end_order, p.departure = event.effective_at, event.effective_order, event
+        p.end, p.end_order, p.departure = (
+            event.effective_at,
+            event.effective_order,
+            event,
+        )
         p.save()
         a.memberships.filter(superseded=False, end__isnull=True).update(
             end=event.effective_at, end_order=event.effective_order
@@ -659,7 +742,9 @@ def receipt(actor, event, data):
     if unit == "kg" and kind == "chemical":
         base_unit, factor = "g", Decimal(1000)
     base = rounded(size * factor)
-    unit_cost = (price / base).quantize(Decimal("0.000000000000000001"), rounding=ROUND_HALF_UP)
+    unit_cost = (price / base).quantize(
+        Decimal("0.000000000000000001"), rounding=ROUND_HALF_UP
+    )
     if abs(unit_cost) >= Decimal("1e20"):
         raise ValidationError("Unit cost exceeds supported fixed precision.")
     date_kind = data.get("date_kind", "")
@@ -685,14 +770,18 @@ def receipt(actor, event, data):
         raise ValidationError("Restriction days cannot be negative.")
     if kind == "chemical":
         dose_unit = spec["dose_unit"]
-        dose_base = {"L": "mL", "mL": "mL", "kg": "g", "g": "g", "unit": "unit"}.get(dose_unit)
+        dose_base = {"L": "mL", "mL": "mL", "kg": "g", "g": "g", "unit": "unit"}.get(
+            dose_unit
+        )
         if dose_base != base_unit:
             raise ValidationError(
                 "Choose a dose unit compatible with the chemical stock unit. No mass/volume conversion is assumed."
             )
     signature = hashlib.sha256(json.dumps(spec, sort_keys=True).encode()).hexdigest()
     values = dict(spec)
-    values["date_value"] = date.fromisoformat(spec["date_value"]) if spec["date_value"] else None
+    values["date_value"] = (
+        date.fromisoformat(spec["date_value"]) if spec["date_value"] else None
+    )
     item, created = Inventory.objects.get_or_create(
         property=actor.property,
         signature=signature,
@@ -772,7 +861,9 @@ def feed(actor, event, data):
     animals = members(actor, data["mob"], event.effective_at, event.effective_order)
     item = scoped(Inventory, actor, data["item"])
     if item.kind != "feed" or item.retired or item.balance <= 0:
-        raise ValidationError("Choose an available feed item with positive starting stock.")
+        raise ValidationError(
+            "Choose an available feed item with positive starting stock."
+        )
     amount = number(data["quantity"], positive=True)
     mode = data.get("mode", "total_kg")
     if mode == "bales":
@@ -781,7 +872,9 @@ def feed(actor, event, data):
         qty = amount * len(animals)
     elif mode == "total_kg":
         if item.base_unit != "kg":
-            raise ValidationError("Selected feed is not measured in kg. Use stock units.")
+            raise ValidationError(
+                "Selected feed is not measured in kg. Use stock units."
+            )
         qty = amount
     elif mode == "stock_units":
         qty = amount * UNITS[item.stock_unit][1]
@@ -797,7 +890,9 @@ def feed(actor, event, data):
         "unit_cost": item.unit_cost,
         "balance": item.balance,
         "storage": data.get("storage", item.storage),
-        "responsible_name": data.get("responsible_name") or actor.get_full_name() or actor.username,
+        "responsible_name": data.get("responsible_name")
+        or actor.get_full_name()
+        or actor.username,
     }
 
 
@@ -823,7 +918,9 @@ def treat(actor, event, data):
         qty = dose * factor * len(animals)
         local_day = (
             __import__("datetime")
-            .datetime.fromtimestamp(event.effective_at, ZoneInfo(actor.property.timezone))
+            .datetime.fromtimestamp(
+                event.effective_at, ZoneInfo(actor.property.timezone)
+            )
             .date()
         )
         if (
@@ -831,7 +928,9 @@ def treat(actor, event, data):
             and item.date_value < local_day
             and not data.get("expired_override")
         ):
-            raise ValidationError("Expired product requires an explicit logged override.")
+            raise ValidationError(
+                "Expired product requires an explicit logged override."
+            )
         if (
             item.date_kind == "expiry"
             and item.date_value < local_day
@@ -860,7 +959,9 @@ def treat(actor, event, data):
     fee = number(data.get("fee") or 0, nonnegative=True)
     fee_total = fee if data.get("fee_mode") == "group" else fee * len(animals)
     if event.kind in ["procedure", "vet"] or fee_total:
-        allocate(event, animals, -fee_total, "vet" if event.kind == "vet" else "procedure")
+        allocate(
+            event, animals, -fee_total, "vet" if event.kind == "vet" else "procedure"
+        )
     participants(event, animals)
     if data.get("procedure") == "castration":
         for a in animals:
@@ -879,7 +980,9 @@ def treat(actor, event, data):
                 event=event,
                 animal=a,
                 starts_at=event.effective_at,
-                ends_at=clock.calendar_days(event.effective_at, days, actor.property.timezone),
+                ends_at=clock.calendar_days(
+                    event.effective_at, days, actor.property.timezone
+                ),
                 days=days,
                 timezone=actor.property.timezone,
             )
@@ -913,7 +1016,10 @@ def reconcile_membership(actor, correction):
         if not original.details.get("mob"):
             continue
         animals = members(
-            actor, original.details["mob"], original.effective_at, original.effective_order
+            actor,
+            original.details["mob"],
+            original.effective_at,
+            original.effective_order,
         )
         related = list(
             Event.objects.filter(
@@ -936,6 +1042,7 @@ def reconcile_membership(actor, correction):
             )
         adjustment = Event.objects.create(
             property=actor.property,
+            pic=actor.pic,
             actor=actor,
             kind="allocation_correction",
             effective_at=original.effective_at,
@@ -969,7 +1076,9 @@ def reconcile_membership(actor, correction):
                 * count
             )
             if original.details.get("item"):
-                categories["chemical"] = -rounded(qty * Decimal(original.details["unit_cost"]))
+                categories["chemical"] = -rounded(
+                    qty * Decimal(original.details["unit_cost"])
+                )
             fee = Decimal(original.details.get("fee") or "0")
             if original.kind in ["procedure", "vet"] or fee:
                 categories["vet" if original.kind == "vet" else "procedure"] = -(
@@ -978,9 +1087,9 @@ def reconcile_membership(actor, correction):
         if original.details.get("item"):
             item = scoped(Inventory, actor, original.details["item"])
             used = -sum(
-                StockPosting.objects.filter(event__in=[original, *related], item=item).values_list(
-                    "quantity", flat=True
-                )
+                StockPosting.objects.filter(
+                    event__in=[original, *related], item=item
+                ).values_list("quantity", flat=True)
             )
             difference = used - qty
             if difference:
@@ -1023,7 +1132,9 @@ def reconcile_membership(actor, correction):
                     days=days,
                     timezone=actor.property.timezone,
                 )
-        adjustment.details.update({"effective_consumed": str(qty), "totals": clean(categories)})
+        adjustment.details.update(
+            {"effective_consumed": str(qty), "totals": clean(categories)}
+        )
         adjustment.save(update_fields=["details"])
         audit(
             actor,
@@ -1064,11 +1175,15 @@ def reverse(actor, event, data):
         "edit_animal",
         "observation",
     ]
+    if original.kind == "mob" and original.details.get("retired_mob"):
+        eligible.append("mob")
     if original.kind not in eligible:
         raise ValidationError(
             "This event requires historical administration rather than a simple reversal."
         )
-    affected_animals = list(Animal.objects.filter(participant__event=original).distinct())
+    affected_animals = list(
+        Animal.objects.filter(participant__event=original).distinct()
+    )
     if any(a.status != "active" for a in affected_animals):
         administrator(actor)
     # Restriction/sex/lifecycle corrections must not invalidate downstream actions.
@@ -1081,7 +1196,9 @@ def reverse(actor, event, data):
         "treat",
     ]:
         later = (
-            Participant.objects.filter(animal__in=affected_animals, event__reversed_by__isnull=True)
+            Participant.objects.filter(
+                animal__in=affected_animals, event__reversed_by__isnull=True
+            )
             .filter(
                 Q(event__submitted_at__gt=original.submitted_at)
                 | Q(
@@ -1128,19 +1245,27 @@ def reverse(actor, event, data):
             Presence.objects.filter(pk=row["presence"]).update(
                 end=None, end_order=None, departure=None
             )
-            Membership.objects.filter(pk__in=row["memberships"]).update(end=None, end_order=None)
+            Membership.objects.filter(pk__in=row["memberships"]).update(
+                end=None, end_order=None
+            )
             Animal.objects.filter(pk=row["animal"]).update(status="active")
     if original.kind == "replace_tag":
         a = affected_animals[0]
-        a.identifiers.filter(current=True).update(current=False, retired_at=event.effective_at)
+        a.identifiers.filter(current=True).update(
+            current=False, retired_at=event.effective_at
+        )
         for old in original.before["identifiers"]:
             attach(event, a, old["kind"], old["value"], "Reversal: " + data["reason"])
     if original.kind == "edit_animal":
         Allocation.objects.filter(resolved_by=original).update(resolved_by=None)
     if original.kind == "retire":
-        Inventory.objects.filter(pk=original.details["item"], property=actor.property).update(
-            retired=original.before["retired"]
-        )
+        Inventory.objects.filter(
+            pk=original.details["item"], property=actor.property
+        ).update(retired=original.before["retired"])
+    if original.kind == "mob" and original.details.get("retired_mob"):
+        mob = scoped(Mob, actor, original.details["retired_mob"])
+        mob.retired = original.before["retired"]
+        mob.save(update_fields=["retired"])
     original.reversed_by = event
     original.save(update_fields=["reversed_by"])
     return {"original": str(original.id), "reversed": True}
@@ -1177,7 +1302,7 @@ def report_template(actor, event, data):
 def account_change(actor, event, data):
     administrator(actor)
     user = (
-        scoped(Account, actor, data["account"])
+        Account.objects.get(pk=data["account"])
         if data.get("account")
         else Account(property=actor.property)
     )
@@ -1185,10 +1310,11 @@ def account_change(actor, event, data):
         user.pk
         and user.administrator
         and (data.get("role") != "admin" or not data.get("active", True))
-        and Account.objects.filter(property=actor.property, role="admin", is_active=True).count()
-        <= 1
+        and Account.objects.filter(role="admin", is_active=True).count() <= 1
     ):
-        raise ValidationError("The last active administrator cannot be disabled or demoted.")
+        raise ValidationError(
+            "The last active administrator cannot be disabled or demoted."
+        )
     if data.get("role", "standard") not in ["standard", "admin"]:
         raise ValidationError("Invalid account role.")
     user.username, user.role, user.is_active = (
@@ -1202,6 +1328,8 @@ def account_change(actor, event, data):
     elif not user.pk:
         raise ValidationError("A secure initial password is required.")
     user.save()
+    if not data.get("account"):
+        user.properties.add(actor.property)
     # Never retain password material in event payload, result or audit.
     data.pop("password", None)
     event.details = data
@@ -1216,7 +1344,9 @@ def account_change(actor, event, data):
 def purge(actor, event, data):
     administrator(actor)
     if not data.get("reason") or not data.get("confirm"):
-        raise ValidationError("A deliberate purge reason and confirmation are required.")
+        raise ValidationError(
+            "A deliberate purge reason and confirmation are required."
+        )
     a = find_animal(actor, data["animal"])
     last = a.presence.order_by("-start").first()
     if a.status == "active" or not last or last.end is None:
@@ -1229,7 +1359,9 @@ def purge(actor, event, data):
     except ValueError:
         cutoff = local.replace(year=local.year + 10, day=28)
     if clock.now() < int(cutoff.timestamp()):
-        raise ValidationError("Ten calendar years have not elapsed since the latest exit/death.")
+        raise ValidationError(
+            "Ten calendar years have not elapsed since the latest exit/death."
+        )
     a.breed, a.sex, a.mother_nlis, a.dob, a.estimated_weeks, a.age_reference = (
         "",
         "",
@@ -1247,7 +1379,9 @@ def purge(actor, event, data):
     def redact(value):
         if isinstance(value, dict):
             # Delete only this animal's imported row, never a shared cohort's payload.
-            if any(str(value.get(k, "")) in reserved for k in ["nlis", "rfid", "identity"]):
+            if any(
+                str(value.get(k, "")) in reserved for k in ["nlis", "rfid", "identity"]
+            ):
                 return {"retention_redacted_identity": str(a.id)}
             return {k: redact(v) for k, v in value.items()}
         if isinstance(value, list):
@@ -1302,7 +1436,11 @@ def identifier_review(actor, event, data):
     a = find_animal(actor, data["animal"])
     kind = data.get("identifier_kind", "rfid")
     value = validate_identifier(kind, data.get("identifier_value", ""))
-    reservation = Identifier.objects.filter(kind=kind, value=value).select_related("animal").first()
+    reservation = (
+        Identifier.objects.filter(kind=kind, value=value)
+        .select_related("animal")
+        .first()
+    )
     if data.get("resolution") == "retire_incorrect_current":
         if not reservation or reservation.animal_id != a.id:
             raise ValidationError(

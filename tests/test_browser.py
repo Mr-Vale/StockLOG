@@ -30,7 +30,11 @@ def sign_in(page, url, user="B"):
     page.locator("[name=username]").fill(user)
     page.locator("[name=password]").fill("Synthetic-Test-Password-2026")
     page.get_by_role("button", name="Sign in", exact=True).click()
-    expect(page.get_by_role("heading", name="Your property")).to_be_visible()
+    expect(
+        page.get_by_role(
+            "heading", name="Synthetic acceptance property Property Summary"
+        )
+    ).to_be_visible()
 
 
 def browser(p, **kwargs):
@@ -57,7 +61,9 @@ def test_phone_registration_desktop_reports_and_admin_boundaries(farm, live_serv
         page.locator("[name=purchase_cost]").fill("100")
         page.locator("[name=sex]").select_option("M")
         page.get_by_role("button", name="Preview effects").click()
-        expect(page.get_by_role("heading", name="Review before confirming")).to_be_visible()
+        expect(
+            page.get_by_role("heading", name="Review before confirming")
+        ).to_be_visible()
         page.get_by_role("button", name="Confirm and save").click()
         expect(page.get_by_role("heading", name="Saved and confirmed")).to_be_visible()
         assert db_query(lambda: Animal.objects.count()) == 1
@@ -94,14 +100,18 @@ def test_offline_reload_download_and_lost_commit_retry_once(farm, live_server):
         raw = page.evaluate('Object.values(localStorage).join(" ")')
         assert "Recovered mob" not in raw  # encrypted account-scoped payload
         page.reload()
-        expect(page.get_by_role("heading", name="Connection unavailable")).to_be_visible()
+        expect(
+            page.get_by_role("heading", name="Connection unavailable")
+        ).to_be_visible()
         expect(page.locator("#recovery")).to_contain_text("Recovered mob")
         with page.expect_download() as download:
             page.get_by_role("button", name="Download readable input").click()
         assert "Recovered mob" in Path(download.value.path()).read_text()
         context.set_offline(False)
         page.get_by_role("button", name="Retry same submission").click()
-        expect(page.get_by_role("heading", name="Review before confirming")).to_be_visible()
+        expect(
+            page.get_by_role("heading", name="Review before confirming")
+        ).to_be_visible()
         page.wait_for_function("window.stocklogRecoveryReady === true")
 
         # Commit reaches Django; transport drops the response afterward.
@@ -127,7 +137,10 @@ def test_offline_reload_download_and_lost_commit_retry_once(farm, live_server):
         page.get_by_role("button", name="Retry same submission").click()
         expect(page.get_by_role("heading", name="Saved and confirmed")).to_be_visible()
         assert db_query(lambda: Mob.objects.filter(name="Recovered mob").count()) == 1
-        assert db_query(lambda: Submission.objects.filter(actor_id=farm[2].id).count()) == 1
+        assert (
+            db_query(lambda: Submission.objects.filter(actor_id=farm[2].id).count())
+            == 1
+        )
         context.close()
         engine.close()
 
@@ -154,4 +167,66 @@ def test_pending_input_is_not_shown_to_another_account(farm, live_server):
             'Object.keys(localStorage).some(k=>k.includes("stocklog.pending"))'
         )
         context.close()
+        engine.close()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_property_homepage_screenshots_and_transition(farm, live_server):
+    from herd.models import PIC
+
+    p, admin, b, _ = farm
+    second = PIC.objects.create(property=p, number="TEST0002")
+    # Unsaved users must select first. Admin fixtures keep a valid saved default.
+    b.property = None
+    b.pic = None
+    b.save(update_fields=["property", "pic"])
+    OUT.mkdir(parents=True, exist_ok=True)
+    with sync_playwright() as playwright:
+        engine = browser(playwright)
+        page = engine.new_page(viewport={"width": 1440, "height": 1000})
+        page.goto(live_server.url + "/login/")
+        page.locator("[name=username]").fill("B")
+        page.locator("[name=password]").fill("Synthetic-Test-Password-2026")
+        page.get_by_role("button", name="Sign in", exact=True).click()
+        expect(
+            page.get_by_role("heading", name="Choose your property and PIC")
+        ).to_be_visible()
+        page.screenshot(
+            path=str(OUT / "property-selection-desktop.png"), full_page=True
+        )
+        page.locator("#property-select").select_option(str(p.pk))
+        # Exercise the client timer without waiting in real time. Server deadline is separately tested.
+        page.clock.install()
+        page.locator("#pic-select").select_option(str(second.pk))
+        expect(page.locator("#switching")).to_be_visible()
+        expect(page.locator("#farm-data")).to_be_hidden()
+        expect(page.locator("#property-select")).to_be_enabled()
+        page.clock.fast_forward(14000)
+        expect(page.locator("#switching")).to_be_visible()
+        # Advance server session deadline as well; no production test hook is introduced.
+        from django.contrib.sessions.models import Session
+
+        session = page.context.cookies()
+        cookie = next(c["value"] for c in session if c["name"] == "sessionid")
+
+        def release():
+            from django.contrib.sessions.backends.db import SessionStore
+
+            s = SessionStore(session_key=cookie)
+            s["farm_ready_at"] = 0
+            s.save()
+
+        db_query(release)
+        page.clock.fast_forward(2000)
+        expect(
+            page.get_by_role(
+                "heading", name="Synthetic acceptance property Property Summary"
+            )
+        ).to_be_visible()
+        page.screenshot(path=str(OUT / "property-home-desktop.png"), full_page=True)
+        page.set_viewport_size({"width": 390, "height": 844})
+        page.screenshot(path=str(OUT / "property-home-mobile.png"), full_page=True)
+        assert page.evaluate(
+            "document.documentElement.scrollWidth <= window.innerWidth"
+        )
         engine.close()

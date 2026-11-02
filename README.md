@@ -1,10 +1,12 @@
 # StockLOG
 
-A responsive cattle-management web application for a single property and small team. It records permanent animal identities and tag lineage, purchases/births/repurchases, historical mobs, sales/deaths, feed and chemical stock, treatments/procedures, lifetime AUD finances and LPA record exports.
+A responsive cattle-management web application for multiple properties/PICs and a small team. It records permanent animal identities and tag lineage, purchases/births/repurchases, historical mobs, sales/deaths, feed and chemical stock, treatments/procedures, lifetime AUD finances and LPA record exports.
 
 Production target: **clean Debian 13 on the owner's RackNerd KVM VPS, 2 vCPU / 2 GB RAM, existing 1 GB swap, approximately 33 GB initially free**. One native deployment: **Caddy → Gunicorn → Django 5.2 LTS → MariaDB 11.8 InnoDB**, supervised by systemd. The installer includes system/native/Python prerequisites. No Docker, Node server, cPanel, HostGator, Python 3.9 or MySQL 5.7 production compatibility is required. Those earlier constraints are explicitly superseded by the owner's implementation approval.
 
 ## Installation and operation
+
+StockLOG 2 is **fresh-install only**. See [property/PIC architecture](docs/PROPERTY_PIC.md) and [this upgrade’s validation](docs/testing/PROPERTY_PIC_RESULTS.md). The interactive Debian installer asks for domain and initial administrator credentials; property setup follows after login.
 
 - [Exact clean-Debian installation and upgrade steps](docs/operations/INSTALL.md)
 - [Encrypted backups, NAS pull, recovery keys and fresh-install restore](docs/operations/BACKUP_RESTORE.md)

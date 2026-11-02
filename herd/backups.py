@@ -19,8 +19,8 @@ from django.db import connection, transaction
 
 from .models import Property
 
-SCHEMA_VERSION = 1
-APPLICATION_VERSION = "1.0.0"
+SCHEMA_VERSION = 2
+APPLICATION_VERSION = "2.0.0"
 
 
 def migration_fingerprint():

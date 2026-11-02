@@ -1,0 +1,1 @@
+{% extends 'herd/base.html' %}{% block content %}<h1>{{ title }}</h1><div class="cards primary-actions">{% for operation,label in actions %}<a href="{% url 'action' operation %}">{{ label }}</a>{% endfor %}</div>{% endblock %}

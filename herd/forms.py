@@ -2,6 +2,7 @@
 
 from django import forms
 
+from .context import scope
 from .clock import local_timestamp
 from .models import Account, Inventory, Mob, ReportTemplate
 
@@ -48,7 +49,7 @@ FIELDS = {
         "notes",
     ],
     "mob": ["name"],
-    "move": ["animal", "mob", "destination", "administration"],
+    "move": ["animals", "mob", "destination", "administration"],
     "replace_tag": ["animal", "nlis", "rfid"],
     "edit_animal": [
         "animal",
@@ -183,7 +184,11 @@ CHOICES = {
         ("expiry", "Expiry"),
         ("DOM", "Manufacture date"),
     ],
-    "category": [("veterinary", "Veterinary"), ("agricultural", "Agricultural")],
+    "category": [
+        ("veterinary", "Veterinary"),
+        ("agricultural", "Agricultural"),
+        ("supplement", "Supplement"),
+    ],
     "role": [("standard", "Standard user"), ("admin", "Administrator")],
     "sex": [("", "Unknown"), ("M", "Male"), ("F", "Female"), ("STEER", "Steer")],
     "broken_needle_status": [("", "Unknown"), ("no", "No"), ("yes", "Yes")],
@@ -257,7 +262,9 @@ class ActionForm(forms.Form):
                     "template": ReportTemplate,
                     "account": Account,
                 }[key]
-                qs = model.objects.filter(property=actor.property)
+                qs = Account.objects.all() if model is Account else scope(model, actor)
+                if model is Mob:
+                    qs = qs.filter(retired=False)
                 if key == "item" and operation in ["feed", "treat"]:
                     qs = qs.filter(
                         retired=False,
@@ -273,7 +280,11 @@ class ActionForm(forms.Form):
                         (
                             str(r.pk),
                             getattr(r, "name", getattr(r, "username", str(r.pk)))
-                            + (f" — {r.balance} {r.base_unit}" if isinstance(r, Inventory) else ""),
+                            + (
+                                f" — {r.balance} {r.base_unit}"
+                                if isinstance(r, Inventory)
+                                else ""
+                            ),
                         )
                         for r in qs
                     ],
@@ -290,11 +301,15 @@ class ActionForm(forms.Form):
                     required=False,
                     max_length=4000,
                     label=label,
-                    widget=forms.PasswordInput(render_value=False)
-                    if key == "password"
-                    else forms.Textarea(attrs={"rows": 3})
-                    if key in TEXT or key == "animals"
-                    else forms.TextInput(),
+                    widget=(
+                        forms.PasswordInput(render_value=False)
+                        if key == "password"
+                        else (
+                            forms.Textarea(attrs={"rows": 3})
+                            if key in TEXT or key == "animals"
+                            else forms.TextInput()
+                        )
+                    ),
                 )
             self.fields[key] = f
 
@@ -312,7 +327,9 @@ class ActionForm(forms.Form):
             d.pop("effective_at", None)
         if d.get("animals"):
             d["animals"] = [
-                x.strip() for x in d["animals"].replace(",", "\n").splitlines() if x.strip()
+                x.strip()
+                for x in d["animals"].replace(",", "\n").splitlines()
+                if x.strip()
             ]
         for key in ["estimated_weeks", "restriction_days"]:
             if d.get(key) not in [None, ""]:

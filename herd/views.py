@@ -15,7 +15,8 @@ from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
-from . import clock, reports, services
+from . import clock, reports, services, home
+from .context import scope, properties_for
 from .forms import FIELDS, ActionForm
 from .models import (
     Account,
@@ -50,7 +51,7 @@ def login_view(request):
                 user = authenticate(
                     request, username=name, password=request.POST.get("password", "")
                 )
-                if user and user.property_id:
+                if user:
                     attempt.failures = 0
                     attempt.blocked_until = 0
                     attempt.save()
@@ -74,30 +75,21 @@ def logout_view(request):
 
 @login_required
 def dashboard(request):
-    return render(
-        request,
-        "herd/dashboard.html",
-        {
-            "animal_count": Animal.objects.filter(
-                property=request.user.property, status="active", purged=False
-            ).count(),
-            "mob_count": Mob.objects.filter(property=request.user.property, retired=False).count(),
-            "actions": [
-                k
-                for k in FIELDS
-                if k
-                not in [
-                    "account",
-                    "purge",
-                    "template",
-                    "reverse",
-                    "retire",
-                    "edit_animal",
-                    "identifier_review",
-                ]
-            ],
-        },
-    )
+    props = list(properties_for(request.user).prefetch_related("pics"))
+    context = {
+        "properties": props,
+        "property_data": [
+            {
+                "id": p.pk,
+                "name": p.name,
+                "pics": [{"id": pic.pk, "number": pic.number} for pic in p.pics.all()],
+            }
+            for p in props
+        ],
+    }
+    if request.context_ready and request.user.pic_id:
+        context["pic_summary"], context["charts"] = home.summary(request.user)
+    return render(request, "herd/dashboard.html", context)
 
 
 @login_required
@@ -113,14 +105,21 @@ def action(request, operation):
     form = ActionForm(
         request.user,
         operation,
-        request.POST
-        if request.method == "POST" and not request.POST.get("confirmed_payload")
-        else None,
+        (
+            request.POST
+            if request.method == "POST" and not request.POST.get("confirmed_payload")
+            else None
+        ),
         initial=initial,
     )
     context = {
         "form": form,
         "operation": operation,
+        "picker_cattle": (
+            scope(Animal, request.user).filter(status="active", purged=False)
+            if operation == "move"
+            else []
+        ),
         "submission_key": request.POST.get("submission_key") or str(uuid.uuid4()),
     }
     if request.method == "POST":
@@ -131,7 +130,10 @@ def action(request, operation):
                     salt="operation:" + str(request.user.pk),
                     max_age=1800,
                 )
-                if payload["operation"] != operation:
+                if (
+                    payload["operation"] != operation
+                    or payload.get("context") != request.farm_context
+                ):
                     raise ValidationError("Invalid confirmation.")
                 result = services.execute(
                     request.user,
@@ -150,8 +152,12 @@ def action(request, operation):
                 data = services.clean(form.cleaned_data)
                 if operation == "account":
                     # Passwords must not be embedded in a signed (readable) confirmation or local recovery storage.
-                    services.execute(request.user, context["submission_key"], operation, data)
-                    messages.success(request, "Account saved. Password material was not logged.")
+                    services.execute(
+                        request.user, context["submission_key"], operation, data
+                    )
+                    messages.success(
+                        request, "Account saved. Password material was not logged."
+                    )
                     return redirect("accounts")
                 reviewed = services.preview(request.user, operation, data)
                 context.update(
@@ -161,6 +167,7 @@ def action(request, operation):
                         "confirmation": signing.dumps(
                             {
                                 "operation": operation,
+                                "context": request.farm_context,
                                 "key": context["submission_key"],
                                 "data": data,
                                 "version": reviewed["version"],
@@ -190,14 +197,17 @@ def action(request, operation):
                     initial = dict(payload["data"])
                     if initial.get("effective_at"):
                         local = datetime.fromtimestamp(
-                            int(initial["effective_at"]), ZoneInfo(request.user.property.timezone)
+                            int(initial["effective_at"]),
+                            ZoneInfo(request.user.property.timezone),
                         )
                         initial["effective_at"] = local.replace(tzinfo=None).isoformat(
                             timespec="seconds"
                         )
                         offset = local.strftime("%z")
                         initial["time_offset"] = offset[:3] + ":" + offset[3:]
-                    context["form"] = ActionForm(request.user, operation, initial=initial)
+                    context["form"] = ActionForm(
+                        request.user, operation, initial=initial
+                    )
     return render(request, "herd/action.html", context)
 
 
@@ -205,7 +215,10 @@ def action(request, operation):
 def animals(request):
     definition = {
         "dataset": "animals",
-        "filters": {"animal": request.GET["q"]} if request.GET.get("q") else {},
+        "filters": {
+            "status": "active",
+            **({"animal": request.GET["q"]} if request.GET.get("q") else {}),
+        },
     }
     return render(
         request,
@@ -216,7 +229,7 @@ def animals(request):
 
 @login_required
 def animal_detail(request, pk):
-    a = get_object_or_404(Animal, pk=pk, property=request.user.property, purged=False)
+    a = get_object_or_404(scope(Animal, request.user), pk=pk, purged=False)
     report = reports.build(request.user, {"filters": {"animal": str(a.id)}})
     return render(
         request,
@@ -237,9 +250,15 @@ def inventory(request):
         request,
         "herd/inventory.html",
         {
-            "items": Inventory.objects.filter(property=request.user.property).order_by(
-                "retired", "kind", "name"
+            "items": scope(Inventory, request.user)
+            .filter(
+                **(
+                    {"kind": request.GET["kind"]}
+                    if request.GET.get("kind") in ["feed", "chemical"]
+                    else {}
+                )
             )
+            .order_by("retired", "kind", "name")
         },
     )
 
@@ -250,7 +269,7 @@ def events(request):
         request,
         "herd/events.html",
         {
-            "events": Event.objects.filter(property=request.user.property)
+            "events": scope(Event, request.user)
             .select_related("actor")
             .order_by("-submitted_at", "-effective_order")[:300]
         },
@@ -270,7 +289,10 @@ def report_view(request):
             operation = request.POST.get("template_operation")
             if operation == "delete" and not target:
                 raise ValidationError("Select a shared template to delete.")
-            if operation != "delete" and not request.POST.get("template_name", "").strip():
+            if (
+                operation != "delete"
+                and not request.POST.get("template_name", "").strip()
+            ):
                 raise ValidationError("Give the shared template a name.")
             services.execute(
                 request.user,
@@ -283,7 +305,9 @@ def report_view(request):
                     "delete": operation == "delete",
                 },
             )
-            messages.success(request, "Shared report template saved/deleted with an audit record.")
+            messages.success(
+                request, "Shared report template saved/deleted with an audit record."
+            )
             return redirect("reports")
         except (ValidationError, signing.BadSignature, KeyError) as e:
             messages.error(request, error_text(e))
@@ -305,7 +329,13 @@ def report_view(request):
             ReportTemplate, pk=request.GET["template"], property=request.user.property
         ).definition
     try:
-        for key in ["as_of", "present_from", "present_to", "activity_from", "activity_to"]:
+        for key in [
+            "as_of",
+            "present_from",
+            "present_to",
+            "activity_from",
+            "activity_to",
+        ]:
             value = definition.get("filters", {}).get(key)
             if value and not str(value).isdigit():
                 definition["filters"][key] = clock.local_timestamp(
@@ -317,9 +347,11 @@ def report_view(request):
             data = reports.pdf(report) if fmt == "pdf" else reports.xlsx(report)
             response = HttpResponse(
                 data,
-                content_type="application/pdf"
-                if fmt == "pdf"
-                else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                content_type=(
+                    "application/pdf"
+                    if fmt == "pdf"
+                    else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                ),
             )
             response["Content-Disposition"] = (
                 f'attachment; filename="StockLOG-{definition.get("dataset", "animals")}.{fmt}"'
@@ -341,9 +373,11 @@ def report_view(request):
             "error": error,
             "datasets": reports.DATASETS,
             "columns": reports.FIELDS,
-            "mobs": Mob.objects.filter(property=request.user.property),
+            "mobs": scope(Mob, request.user),
             "templates": ReportTemplate.objects.filter(property=request.user.property),
-            "report_definition": signing.dumps(definition, salt="report:" + str(request.user.pk)),
+            "report_definition": signing.dumps(
+                definition, salt="report:" + str(request.user.pk)
+            ),
             "template_submission_key": str(uuid.uuid4()),
             "export_query": request.GET.urlencode(),
         },
@@ -356,20 +390,23 @@ def import_view(request):
 
     context = {
         "columns": COLUMNS,
-        "mobs": Mob.objects.filter(property=request.user.property),
+        "mobs": scope(Mob, request.user),
     }
     try:
         if request.method == "POST" and request.FILES.get("file"):
             headers, rows = read_upload(request.FILES["file"])
             batch = ImportPreview.objects.create(
                 property=request.user.property,
+                pic=request.user.pic,
                 actor=request.user,
                 rows={"headers": headers, "source": rows},
             )
-            context.update({"mapping_batch": batch, "headers": list(enumerate(headers))})
+            context.update(
+                {"mapping_batch": batch, "headers": list(enumerate(headers))}
+            )
         elif request.method == "POST" and request.POST.get("mapping_batch"):
             batch = get_object_or_404(
-                ImportPreview,
+                scope(ImportPreview, request.user),
                 pk=request.POST["mapping_batch"],
                 property=request.user.property,
                 actor=request.user,
@@ -390,7 +427,7 @@ def import_view(request):
             context["preview_batch"] = batch
         elif request.method == "POST" and request.POST.get("confirm_batch"):
             batch = get_object_or_404(
-                ImportPreview,
+                scope(ImportPreview, request.user),
                 pk=request.POST["confirm_batch"],
                 property=request.user.property,
                 actor=request.user,
@@ -403,7 +440,9 @@ def import_view(request):
             rows = []
             for i in selected:
                 if i < 0 or i >= len(batch.rows) or batch.rows[i]["errors"]:
-                    raise ValidationError("Only explicitly selected valid rows may be confirmed.")
+                    raise ValidationError(
+                        "Only explicitly selected valid rows may be confirmed."
+                    )
                 rows.append(batch.rows[i]["data"])
             with transaction.atomic():
                 result = services.execute(
@@ -437,7 +476,7 @@ def accounts(request):
     return render(
         request,
         "herd/accounts.html",
-        {"accounts": Account.objects.filter(property=request.user.property)},
+        {"accounts": Account.objects.all()},
     )
 
 

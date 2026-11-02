@@ -179,14 +179,24 @@ def test_stale_browser_confirmation_restores_input_for_review(farm):
     _, a, b, c = farm
     client = Client()
     client.force_login(b)
+    token = client.get("/action/mob/").wsgi_request.farm_context
     preview = client.post(
-        "/action/mob/", {"name": "Keep this reviewed input", "submission_key": "stale-web"}
+        "/action/mob/",
+        {
+            "farm_context": token,
+            "name": "Keep this reviewed input",
+            "submission_key": "stale-web",
+        },
     )
     assert preview.status_code == 200 and preview.context["confirmation"]
     run(c, "mob", {"name": "Competing change"})
     response = client.post(
         "/action/mob/",
-        {"confirmed_payload": preview.context["confirmation"], "submission_key": "stale-web"},
+        {
+            "farm_context": token,
+            "confirmed_payload": preview.context["confirmation"],
+            "submission_key": "stale-web",
+        },
     )
     assert response.status_code == 200 and b"changed since preview" in response.content
     assert response.context["form"].initial["name"] == "Keep this reviewed input"
@@ -217,21 +227,33 @@ def test_inventory_cost_units_pdf_and_grouped_compensation_reports(farm):
         item = Inventory.objects.get(pk=chemical)
         assert item.cost_per_stock_unit == __import__("decimal").Decimal("12.50")
         assert item.cost_per_dose_unit == __import__("decimal").Decimal("0.0125")
-        mistake = run(b, "feed", {"mob": mob, "item": hay, "quantity": 3, "mode": "bales"})
+        mistake = run(
+            b, "feed", {"mob": mob, "item": hay, "quantity": 3, "mode": "bales"}
+        )
     with clock.at(T + 1):
-        run(b, "reverse", {"original": mistake["event"], "reason": "Correct actual bales"})
+        run(
+            b,
+            "reverse",
+            {"original": mistake["event"], "reason": "Correct actual bales"},
+        )
         run(b, "feed", {"mob": mob, "item": hay, "quantity": 2, "mode": "bales"})
         grouped = reports.build(b, {"dataset": "feed", "group": "kind"})
         assert grouped["totals"]["cost"] == 130
-        assert len(grouped["rows"]) == 3 and sum(g["cost"] for g in grouped["groups"]) == 130
+        assert (
+            len(grouped["rows"]) == 3
+            and sum(g["cost"] for g in grouped["groups"]) == 130
+        )
         inventory = reports.build(b, {"dataset": "inventory"})
         from pypdf import PdfReader
 
         text = "".join(
-            page.extract_text() for page in PdfReader(io.BytesIO(reports.pdf(inventory))).pages
+            page.extract_text()
+            for page in PdfReader(io.BytesIO(reports.pdf(inventory))).pages
         )
         assert "Twenty litre costing test" in " ".join(text.split()) and "20000" in text
         assert (
             "Groups"
-            in __import__("openpyxl").load_workbook(io.BytesIO(reports.xlsx(grouped))).sheetnames
+            in __import__("openpyxl")
+            .load_workbook(io.BytesIO(reports.xlsx(grouped)))
+            .sheetnames
         )

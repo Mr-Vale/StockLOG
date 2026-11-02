@@ -1,0 +1,13 @@
+# Property/PIC implementation
+
+One MariaDB database contains Property → PIC relationships. `Inventory` is property-owned; `Animal`, `Mob`, `Presence`, `Event` and import previews record their PIC. A presence freezes the PIC of each purchase cycle; repurchase in another PIC of the same property retains the identity and full lifetime allocations. An identifier registered to another property is rejected for administrator review, never copied or silently reassigned.
+
+`Account.properties` grants standard-user access; global administrators can manage all properties. `Account.property` and `Account.pic` store the explicitly saved default pair. Active selection lives in the login session and is revalidated on every request. Service transactions re-read account access before committing, lock the property, validate PIC ownership and scope animal/mob/event lookups to the selected PIC. Inventory lookups remain property-wide. Reports select cattle in the current PIC, retain full financial history, and identify the selected PIC in export notes. Property inventory and audit remain property-wide.
+
+The context generation changes on each valid pair switch. Forms carry a signed context token, and confirmations bind the same token; old forms cannot silently write to a different selection. A server-owned 15-second deadline blocks operational routes while the destination is being selected. The homepage hides previous data immediately. Switching within the wait uses the new destination/deadline; reload continues the remaining wait. Save selection persists defaults without restarting the pause when the pair is unchanged.
+
+Dashboard counts use active, non-purged cattle. All non-retired mobs count, including empty mobs. Charts cover the whole selected property and include unknown values. Steers count as male. Age uses DOB or an inferred DOB from estimated weeks at the reference timestamp. Boundaries are calendar anniversaries at 3, 12 and 24 months (month-end clamps to the last valid date). Pie/bar choices persist per chart per account.
+
+The four activity entry points reuse existing audited transactions. MOBs supports name creation, multi-identifier transfers with an autocomplete picker and review, and retirement only after members are moved out. Inventory tools retain receipt/refill, stocktake/correction and hide/retire workflows; shared item specifications and historical prices are not silently overwritten.
+
+Fresh installations use the regenerated initial migration. Old migrations are deliberately removed: no test-data conversion or compatibility shim is included. Backup schema/application versions are bumped to 2 / 2.0.0 so old restore files cannot be mistaken for the new schema.
