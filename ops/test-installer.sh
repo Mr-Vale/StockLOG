@@ -25,6 +25,10 @@ child.expect(pexpect.EOF, timeout=5)
 child.close()
 assert child.exitstatus == 0, f'Installer exited {child.exitstatus}'
 PY
+# Regression: root validation misses unreadable imports. Exercise the service identity.
+docker exec "$INSTALLER_CONTAINER" runuser -u caddy -- caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+docker exec "$INSTALLER_CONTAINER" bash -c 'test "$(stat -c "%U:%G:%a" /etc/caddy/sites-enabled/stocklog.caddy)" = "root:caddy:640" && test "$(stat -c "%U:%G:%a" /etc/caddy/Caddyfile)" = "root:caddy:640"'
+docker exec "$INSTALLER_CONTAINER" runuser -u caddy -- test ! -r /etc/stocklog/app.env
 docker exec "$INSTALLER_CONTAINER" stocklog-manage check --deploy --fail-level ERROR
 docker exec "$INSTALLER_CONTAINER" stocklog-manage shell -c "from herd.models import Account, Property; a=Account.objects.get(username='installer-test-admin'); assert a.administrator and a.check_password('Disposable-Installer-Check-2026'); assert not Property.objects.exists(); print('Initial administrator and empty property setup verified')"
 # Re-running must stop rather than replace the activated installation or reset credentials.

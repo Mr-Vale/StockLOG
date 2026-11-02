@@ -201,7 +201,11 @@ $DOMAIN {
     }
 }
 SITE
-caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+# The restrictive installer umask creates root:root 0640 files. Caddy runs as its
+# own service user, so explicitly grant its group read access before validation.
+chown root:caddy /etc/caddy/Caddyfile /etc/caddy/sites-enabled/stocklog.caddy
+chmod 0640 /etc/caddy/Caddyfile /etc/caddy/sites-enabled/stocklog.caddy
+runuser -u caddy -- caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 cat > /etc/logrotate.d/stocklog <<'LOGROTATE'
 /var/log/stocklog/*.log {
     weekly
