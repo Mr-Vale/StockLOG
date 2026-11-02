@@ -1,4 +1,4 @@
-"""Independent companion-fixture totals; synthetic data only, real InnoDB services."""
+"""Independent companion-fixture totals; synthetic data only; production engine checks are separate."""
 
 import json
 import uuid
@@ -32,7 +32,6 @@ def timestamp(start, day, hour, minute=0):
 @pytest.mark.django_db(transaction=True)
 def test_complete_overlapping_cohorts(farm):
     prop, admin, b, c = farm
-    assert __import__("django").db.connection.vendor == "mysql"
     jobs = []
     cohorts = {}
     fixture_map = {}

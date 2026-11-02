@@ -1,0 +1,8 @@
+2026-11-02T11:51:34.0866677Z Initial administrator username: installer-test-admin
+2026-11-02T11:51:34.1388289Z Initial administrator password: 
+2026-11-02T11:51:34.1893805Z Repeat password: 
+2026-11-02T11:51:34.3993388Z Administrator created. Log in to add your first property and PIC.
+2026-11-02T11:51:34.4709730Z Valid configuration
+2026-11-02T11:51:34.4819707Z Installed release e3be35a601c5-881d8c677bfb. No account password was generated or printed.
+2026-11-02T12:06:35.2300730Z Initial administrator and empty property setup verified
+2026-11-02T12:06:35.3285832Z Debian 13 package/schema/configuration and terminal prompts passed. PID-1 service boot, reboot and public ACME remain unverified.

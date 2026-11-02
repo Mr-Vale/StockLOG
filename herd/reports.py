@@ -11,6 +11,7 @@ from django.db import transaction
 from django.db.models import Q, Sum
 
 from . import clock
+from .context import scope, validate_context
 from .models import Animal, Audit, Event, Inventory, Property
 
 
@@ -108,9 +109,12 @@ def validate_definition(definition):
     if (
         set(definition.get("columns", [])) - set(FIELDS)
         or definition.get("sort", "animal").lstrip("-") not in FIELDS
-        or definition.get("group", "") not in ["", "mob", "breed", "sex", "status", "kind", "name"]
+        or definition.get("group", "")
+        not in ["", "mob", "breed", "sex", "status", "kind", "name"]
     ):
-        raise ValidationError("Choose allowed report columns, grouping and sort fields.")
+        raise ValidationError(
+            "Choose allowed report columns, grouping and sort fields."
+        )
     filters = definition.get("filters", {})
     if not isinstance(filters, dict) or set(filters) - FILTERS:
         raise ValidationError("Unsupported report filter.")
@@ -126,7 +130,9 @@ def validate_definition(definition):
     ] or definition.get("filter_mode", "all") not in ["all", "any"]:
         raise ValidationError("Invalid attribute time or filter combination.")
     if definition.get("attribute_time") == "as_of" and not filters.get("as_of"):
-        raise ValidationError("An as-of timestamp is required for historical attributes.")
+        raise ValidationError(
+            "An as-of timestamp is required for historical attributes."
+        )
     return definition
 
 
@@ -137,7 +143,18 @@ def animal_rows(actor, definition):
     f = definition.get("filters", {})
     at = int(f.get("as_of") or clock.now())
     rows = []
-    for a in Animal.objects.filter(property=actor.property, purged=False).prefetch_related(
+    candidates = scope(Animal, actor).filter(purged=False)
+    if f.get("as_of"):
+        # Historical selection follows the frozen PIC on each presence, not the latest cycle.
+        validate_context(actor)
+        candidates = Animal.objects.filter(
+            Q(presence__end__isnull=True) | Q(presence__end__gt=at),
+            property=actor.property,
+            purged=False,
+            presence__pic_id=actor.pic_id,
+            presence__start__lte=at,
+        ).distinct()
+    for a in candidates.prefetch_related(
         "identifiers", "allocations", "memberships__mob", "restrictions"
     ):
         breed, sex, status = a.breed, a.sex, a.status
@@ -163,7 +180,8 @@ def animal_rows(actor, definition):
         age = None
         if a.dob:
             age = (
-                datetime.fromtimestamp(at, ZoneInfo(actor.property.timezone)).date() - a.dob
+                datetime.fromtimestamp(at, ZoneInfo(actor.property.timezone)).date()
+                - a.dob
             ).days // 7
         elif a.estimated_weeks is not None and a.age_reference is not None:
             age = (
@@ -195,7 +213,9 @@ def animal_rows(actor, definition):
                 or a.identifiers.filter(value=str(f["animal"]).upper()).exists()
             )
         if f.get("mob"):
-            checks.append(a.memberships.filter(mob_id=f["mob"], superseded=False).exists())
+            checks.append(
+                a.memberships.filter(mob_id=f["mob"], superseded=False).exists()
+            )
         if f.get("min_age"):
             checks.append(age is not None and age >= int(f["min_age"]))
         if f.get("max_age"):
@@ -214,7 +234,9 @@ def animal_rows(actor, definition):
                 event__effective_at__lte=int(f.get("activity_to") or clock.now()),
             )
             checks.append(q.exists())
-        if checks and not (any(checks) if definition.get("filter_mode") == "any" else all(checks)):
+        if checks and not (
+            any(checks) if definition.get("filter_mode") == "any" else all(checks)
+        ):
             continue
         sums = {
             r["category"]: r["total"]
@@ -226,7 +248,9 @@ def animal_rows(actor, definition):
             unknown=True, resolved_by__isnull=True, event__reversed_by__isnull=True
         ).exists()
         restrictions = (
-            a.restrictions.filter(event__reversed_by__isnull=True, superseded_by__isnull=True)
+            a.restrictions.filter(
+                event__reversed_by__isnull=True, superseded_by__isnull=True
+            )
             .order_by("-ends_at")
             .first()
         )
@@ -250,7 +274,11 @@ def animal_rows(actor, definition):
             "restriction_end": restrictions.ends_at if restrictions else None,
         }
         for cat in ["purchase", "sale", "feed", "chemical", "procedure", "vet"]:
-            row[cat] = sums.get(cat, Decimal(0)) if cat == "sale" else -sums.get(cat, Decimal(0))
+            row[cat] = (
+                sums.get(cat, Decimal(0))
+                if cat == "sale"
+                else -sums.get(cat, Decimal(0))
+            )
         rows.append(row)
     return rows
 
@@ -258,6 +286,7 @@ def animal_rows(actor, definition):
 @precise
 @transaction.atomic
 def build(actor, definition):
+    validate_context(actor)
     validate_definition(definition)
     Property.objects.select_for_update().get(pk=actor.property_id)
     ds = definition.get("dataset", "animals")
@@ -279,7 +308,9 @@ def build(actor, definition):
                 "package_price": i.package_price,
                 "cost_per_stock_unit": i.cost_per_stock_unit,
                 "dose_unit": i.dose_unit,
-                "cost_per_dose_unit": i.cost_per_dose_unit if i.kind == "chemical" else None,
+                "cost_per_dose_unit": (
+                    i.cost_per_dose_unit if i.kind == "chemical" else None
+                ),
                 "batch": i.batch,
                 "balance": i.balance,
                 "unit": i.base_unit,
@@ -308,6 +339,7 @@ def build(actor, definition):
             }
             for r in Restriction.objects.filter(
                 animal__property=actor.property,
+                animal__pic_id=actor.pic_id,
                 event__reversed_by__isnull=True,
                 superseded_by__isnull=True,
             )
@@ -321,7 +353,9 @@ def build(actor, definition):
                 "event": str(r.event_id or ""),
                 "details": r.details,
             }
-            for r in Audit.objects.filter(property=actor.property).select_related("actor")
+            for r in Audit.objects.filter(property=actor.property).select_related(
+                "actor"
+            )
         ]
     else:
         kinds = {
@@ -337,15 +371,18 @@ def build(actor, definition):
             "lpa5B": ["sale"],
         }
         rows = []
-        for e in Event.objects.filter(
-            property=actor.property,
-            kind__in=kinds[ds]
-            + (
-                ["reverse", "allocation_correction"]
-                if ds in ["feed", "treatments", "exits"]
-                else []
-            ),
-        ).select_related("actor"):
+        for e in (
+            scope(Event, actor)
+            .filter(
+                kind__in=kinds[ds]
+                + (
+                    ["reverse", "allocation_correction"]
+                    if ds in ["feed", "treatments", "exits"]
+                    else []
+                ),
+            )
+            .select_related("actor")
+        ):
             source_event = e
             if e.kind in ["reverse", "allocation_correction"]:
                 original = Event.objects.filter(
@@ -354,9 +391,15 @@ def build(actor, definition):
                 if not original or original.kind not in kinds[ds]:
                     continue
                 source_event = original
-            amounts = list(e.allocations.values("category", "amount", "unknown", "resolved_by"))
-            cost = -sum((v["amount"] for v in amounts if v["category"] != "sale"), Decimal(0))
-            revenue = sum((v["amount"] for v in amounts if v["category"] == "sale"), Decimal(0))
+            amounts = list(
+                e.allocations.values("category", "amount", "unknown", "resolved_by")
+            )
+            cost = -sum(
+                (v["amount"] for v in amounts if v["category"] != "sale"), Decimal(0)
+            )
+            revenue = sum(
+                (v["amount"] for v in amounts if v["category"] == "sale"), Decimal(0)
+            )
             if (
                 ds == "lpa3D"
                 and e.details.get("kind") != "feed"
@@ -405,11 +448,19 @@ def build(actor, definition):
                 <= int(filters["activity_to"])
             ]
         animal_filters = {
-            k: v for k, v in filters.items() if k not in ["activity_from", "activity_to"]
+            k: v
+            for k, v in filters.items()
+            if k not in ["activity_from", "activity_to"]
         }
-        if set(animal_filters) - {"as_of"} and ds not in ["inventory", "audit", "lpa3D", "lpa6"]:
+        if set(animal_filters) - {"as_of"} and ds not in [
+            "inventory",
+            "audit",
+            "lpa3D",
+            "lpa6",
+        ]:
             selected = {
-                r["identity"] for r in animal_rows(actor, {**definition, "filters": animal_filters})
+                r["identity"]
+                for r in animal_rows(actor, {**definition, "filters": animal_filters})
             }
             event_ids = {
                 str(v)
@@ -424,7 +475,9 @@ def build(actor, definition):
                 or str(r.get("animal", ""))
                 in {
                     r["animal"]
-                    for r in animal_rows(actor, {**definition, "filters": animal_filters})
+                    for r in animal_rows(
+                        actor, {**definition, "filters": animal_filters}
+                    )
                 }
             ]
     sort = definition.get("sort", "animal")
@@ -490,6 +543,8 @@ def build(actor, definition):
         "display_format": actor.date_format,
         "note": "AUD. Date/attribute filters select animals; their finances always cover the full lifetime. Unknown purchase prices make P/L incomplete. Active animals show costs/revenue to date, not a final sale outcome. Export dates use your display timezone. Property timezone "
         + actor.property.timezone
+        + "; selected PIC "
+        + actor.pic.number
         + ". Amounts are displayed to cents with reconciliation rounding; Excel also includes full-precision values.",
     }
 
@@ -500,9 +555,7 @@ def text(value):
     return (
         json.dumps(value, default=str, ensure_ascii=False)
         if isinstance(value, (dict, list))
-        else ""
-        if value is None
-        else str(value)
+        else "" if value is None else str(value)
     )
 
 
@@ -516,9 +569,13 @@ def xlsx(report):
     ws.title = "StockLOG"
     ws.append(["StockLOG report"])
     ws.append([report["note"]])
-    ws.append(["Selection", report.get("selection_description", text(report["definition"]))])
+    ws.append(
+        ["Selection", report.get("selection_description", text(report["definition"]))]
+    )
     columns = report["definition"].get("columns") or (
-        list(report["rows"][0]) if report["rows"] else ["animal", "cost", "revenue", "profit"]
+        list(report["rows"][0])
+        if report["rows"]
+        else ["animal", "cost", "revenue", "profit"]
     )
     ws.append(columns)
     for cell in ws[4]:
@@ -530,9 +587,7 @@ def xlsx(report):
             cell.data_type = "s"
     ws.append(["Totals (full precision)", text(report["totals"])])
     ws.freeze_panes = "A5"
-    ws.auto_filter.ref = (
-        f"A4:{__import__('openpyxl').utils.get_column_letter(len(columns))}{ws.max_row - 1}"
-    )
+    ws.auto_filter.ref = f"A4:{__import__('openpyxl').utils.get_column_letter(len(columns))}{ws.max_row - 1}"
     for column in ws.columns:
         ws.column_dimensions[column[0].column_letter].width = min(
             60, max(16, len(str(column[3].value or "")) + 2)
@@ -603,7 +658,8 @@ def pdf(report):
         Paragraph(escape(report["note"]), styles["Normal"]),
         Spacer(1, 8),
         Paragraph(
-            "Selection: " + escape(report.get("selection_description", text(report["definition"]))),
+            "Selection: "
+            + escape(report.get("selection_description", text(report["definition"]))),
             styles["Normal"],
         ),
         Spacer(1, 12),
@@ -614,7 +670,15 @@ def pdf(report):
         else ["event", "kind", "effective_at", "cost", "revenue", "actor", "details"]
     )
     if report["definition"].get("dataset") == "inventory":
-        default = ["name", "kind", "packages_remaining", "balance", "unit", "value", "batch"]
+        default = [
+            "name",
+            "kind",
+            "packages_remaining",
+            "balance",
+            "unit",
+            "value",
+            "batch",
+        ]
     elif report["definition"].get("dataset") == "restrictions":
         default = ["animal", "effective_at", "restriction_end", "details"]
     elif report["definition"].get("dataset") == "audit":
@@ -627,13 +691,18 @@ def pdf(report):
         if offset:
             story.append(PageBreak())
         table = [
-            [Paragraph(escape(c.replace("_", " ").title()), styles["BodyText"]) for c in subset]
+            [
+                Paragraph(escape(c.replace("_", " ").title()), styles["BodyText"])
+                for c in subset
+            ]
         ]
         for index, row in enumerate(report["rows"]):
             table.append(
                 [
                     Paragraph(
-                        escape(display_value(row.get(c), c, report, index)).replace("\n", "<br/>"),
+                        escape(display_value(row.get(c), c, report, index)).replace(
+                            "\n", "<br/>"
+                        ),
                         styles["BodyText"],
                     )
                     for c in subset
@@ -805,8 +874,8 @@ def lpa_records(actor, dataset):
         "lpa6": ["receipt"],
     }
     records = []
-    for e in Event.objects.filter(property=actor.property, kind__in=kinds[dataset]).select_related(
-        "actor"
+    for e in (
+        scope(Event, actor).filter(kind__in=kinds[dataset]).select_related("actor")
     ):
         d = e.details
         if (
@@ -838,9 +907,11 @@ def lpa_records(actor, dataset):
                 "livestock_count": d.get("count", 0),
                 "product_name": d.get("product_name", ""),
                 "batch": d.get("batch", ""),
-                "expiry_date": d.get("date_value", "")
-                if d.get("date_kind") == "expiry"
-                else "Not supplied as expiry",
+                "expiry_date": (
+                    d.get("date_value", "")
+                    if d.get("date_kind") == "expiry"
+                    else "Not supplied as expiry"
+                ),
                 "date_kind": d.get("date_kind", ""),
                 "actual_dose_per_head": d.get("dose", ""),
                 "dose_unit": d.get("dose_unit", ""),
@@ -889,7 +960,9 @@ def lpa_records(actor, dataset):
                 "received_quantity": d.get("received"),
                 "origin": d.get("origin_text", ""),
                 "supplier": d.get("supplier_name", ""),
-                "certificate_available": d.get("residue_certificate_available", "Unknown"),
+                "certificate_available": d.get(
+                    "residue_certificate_available", "Unknown"
+                ),
                 "product_tested": d.get("product_tested", "Unknown"),
                 "storage_location": d.get("storage", ""),
                 "signed_by": d.get("signed_by_name", ""),
@@ -915,7 +988,9 @@ def lpa_records(actor, dataset):
                     "vendor_address": row.get("vendor_address", ""),
                     "source_pic": row.get("source_pic", ""),
                     "notes": row.get("notes", ""),
-                    "identifiers": "; ".join(str(row.get(k, "")) for k in ["nlis", "rfid"]),
+                    "identifiers": "; ".join(
+                        str(row.get(k, "")) for k in ["nlis", "rfid"]
+                    ),
                 }
                 records.append({**base, **r})
             continue
@@ -927,7 +1002,9 @@ def lpa_records(actor, dataset):
                 "nlis_upload_reference": d.get("nlis_upload_reference", ""),
                 "stock_count": d.get("count", len(snapshots)),
                 "origin_paddock": d.get("origin_paddock_text", ""),
-                "breed": "; ".join(sorted({v.get("breed", "Unknown") for v in snapshots})),
+                "breed": "; ".join(
+                    sorted({v.get("breed", "Unknown") for v in snapshots})
+                ),
                 "sex": "; ".join(sorted({v.get("sex", "Unknown") for v in snapshots})),
                 "destination_name": d.get("destination_name", ""),
                 "destination_pic": d.get("destination_pic", ""),
@@ -954,9 +1031,9 @@ def lpa_records(actor, dataset):
 def RestrictionEnd(event):
     from .models import Restriction
 
-    return Restriction.objects.filter(event=event, superseded_by__isnull=True).aggregate(
-        end=__import__("django").db.models.Max("ends_at")
-    )["end"]
+    return Restriction.objects.filter(
+        event=event, superseded_by__isnull=True
+    ).aggregate(end=__import__("django").db.models.Max("ends_at"))["end"]
 
 
 def MobName(actor, pk):
@@ -996,7 +1073,8 @@ def display_value(value, column, report, index):
     if column in TIME_FIELDS and value not in [None, ""]:
         try:
             return datetime.fromtimestamp(
-                int(value), ZoneInfo(report.get("display_timezone", "Australia/Melbourne"))
+                int(value),
+                ZoneInfo(report.get("display_timezone", "Australia/Melbourne")),
             ).strftime(report.get("display_format", "%d/%m/%Y %H:%M"))
         except (ValueError, TypeError, OverflowError):
             return text(value)
@@ -1012,7 +1090,9 @@ def display_value(value, column, report, index):
                 if isinstance(r.get(column), Decimal)
             ]
             floors = {i: v.quantize(cent, rounding=ROUND_FLOOR) for i, v in values}
-            goal = sum((v for i, v in values), Decimal(0)).quantize(cent, rounding=ROUND_HALF_UP)
+            goal = sum((v for i, v in values), Decimal(0)).quantize(
+                cent, rounding=ROUND_HALF_UP
+            )
             extra = int((goal - sum(floors.values())) / cent)
             ordered = sorted(
                 values,
@@ -1036,7 +1116,13 @@ def selection_description(actor, definition):
                 value = MobName(actor, value)
             except Exception:
                 value = "Unavailable mob"
-        elif key in ["as_of", "present_from", "present_to", "activity_from", "activity_to"]:
+        elif key in [
+            "as_of",
+            "present_from",
+            "present_to",
+            "activity_from",
+            "activity_to",
+        ]:
             value = display_value(
                 value,
                 "effective_at",
@@ -1048,7 +1134,9 @@ def selection_description(actor, definition):
                 0,
             )
         pieces.append(key.replace("_", " ").title() + ": " + str(value))
-    pieces.append("Attributes: " + definition.get("attribute_time", "current").replace("_", " "))
+    pieces.append(
+        "Attributes: " + definition.get("attribute_time", "current").replace("_", " ")
+    )
     pieces.append("Filters: " + definition.get("filter_mode", "all"))
     return "; ".join(pieces)
 

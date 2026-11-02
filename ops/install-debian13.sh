@@ -13,10 +13,19 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown option: $1" >&2; exit 2 ;;
   esac
 done
+if [[ -e /etc/stocklog/install-complete || -L /opt/stocklog/current ]]; then
+  echo 'An installation already exists. This fresh-install command will not replace it. See the update/restore documentation.' >&2
+  exit 1
+fi
+if [[ -z $DOMAIN ]]; then
+  read -r -p 'Public domain name (DNS must point to this server): ' DOMAIN </dev/tty
+fi
+DOMAIN=${DOMAIN,,}
 if [[ ! $DOMAIN =~ ^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$ || $DOMAIN != *.* ]]; then echo 'Supply --domain stocklog.your-domain.example (real public DNS required for HTTPS).' >&2; exit 2; fi
 exec 9>/var/lock/stocklog-install.lock
 flock -n 9 || { echo 'Another installation is running.' >&2; exit 1; }
 trap 'flock -u 8 2>/dev/null || true; flock -u 9' EXIT
+trap 'echo "Installation failed at line $LINENO. Fix the reported error, then rerun the same command if no current release was activated. Do not delete the database or app.env. See docs/operations/INSTALL.md." >&2' ERR
 BACKUP_LOCKED=0
 if [[ -d /var/lib/stocklog/backups ]]; then
   exec 8>/var/lib/stocklog/backups/.operations.lock
@@ -99,7 +108,10 @@ runuser -u stocklog -- "$DEST/.venv/bin/python" "$DEST/manage.py" collectstatic 
 find /var/lib/stocklog/static -type d -exec chmod 0755 {} +
 find /var/lib/stocklog/static -type f -exec chmod 0644 {} +
 "$DEST/.venv/bin/python" "$DEST/manage.py" check --deploy --fail-level ERROR
-# No Django public registration/default password; first-admin setup is a separate terminal command.
+# Prompt directly on the terminal: password never enters shell variables, argv, or logs.
+if [[ $("$DEST/.venv/bin/python" "$DEST/manage.py" shell -c 'from herd.models import Account; print(Account.objects.count())' | tail -n1) == 0 ]]; then
+  runuser -u stocklog -- "$DEST/.venv/bin/python" "$DEST/manage.py" initial_admin </dev/tty
+fi
 ln -sfn "$DEST" /opt/stocklog/current
 cat > /usr/local/bin/stocklog-manage <<'MANAGE'
 #!/usr/bin/env bash
@@ -210,6 +222,20 @@ if [[ $NO_START == 0 ]]; then
   systemctl start stocklog-backup.timer
 fi
 printf 'Installed release %s. No account password was generated or printed.\n' "$RELEASE"
-printf 'Next: stocklog-manage initial_admin --username YOUR_ADMIN --pic YOUR_PIC --property-name "YOUR PROPERTY"\n'
+printf 'Log in at https://%s/ to create your first property and PIC.\n' "$DOMAIN"
+if [[ $NO_START == 0 ]]; then
+  echo 'Checking application and HTTPS (DNS must resolve to this server; inbound TCP 80/443 must be reachable).'
+  curl --fail --silent --show-error --retry 5 --retry-delay 3 --retry-connrefused -H "Host: $DOMAIN" -H 'X-Forwarded-Proto: https' http://127.0.0.1:8001/health/
+  if ! getent ahosts "$DOMAIN" >/dev/null; then
+    echo "DNS does not resolve. Point A (and only working AAAA) records to this server, then check https://$DOMAIN/health/." >&2
+    exit 1
+  fi
+  if ! curl --fail --silent --show-error --retry 5 --retry-delay 5 "https://$DOMAIN/health/"; then
+    echo 'HTTPS is not ready. Check DNS A/AAAA, inbound ports 80/443, and journalctl -u caddy. The installed services remain available for diagnosis.' >&2
+    exit 1
+  fi
+  touch /etc/stocklog/install-complete
+  echo 'Installation and HTTPS health checks passed.'
+fi
 printf 'Copy /etc/stocklog/recovery.key to protected OFF-SERVER storage before relying on encrypted backups.\n'
 printf 'Verify DNS/HTTPS, first sign-in, backup and isolated restore before operational use.\n'

@@ -18,3 +18,10 @@ jobs:
         with:
           name: synthetic-acceptance-reports
           path: docs/testing/generated/
+  installer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Interactive fresh Debian 13 installer (no systemd PID-1 or public ACME)
+        run: bash ops/test-installer.sh

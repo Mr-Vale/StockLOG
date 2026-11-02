@@ -1,71 +1,57 @@
-# Clean Debian 13 installation
+# StockLOG 2: fresh Debian 13 installation
 
-Target: RackNerd KVM, Debian 13, Python 3.13, 2 vCPU/2 GB RAM, existing 1 GB swap, roughly 33 GB initially free. One native stack: Caddy, Gunicorn/Django and MariaDB 11.8 with systemd. **No owner VPS/NAS deployment was performed during development.** Read [actual test evidence](../testing/RESULTS.md) before deployment.
+This release uses a new property/PIC schema. Install into an empty database only. There is no migration of existing test records. The owner will wipe/reinstall the server; development does not touch the VPS.
 
-## Before transferring a release
+## One command
 
-Choose the public hostname, property name/PIC and first-admin username. Point its DNS A record to the VPS; publish AAAA only if IPv6 works. Make TCP 80/443 reachable for Caddy/ACME and retain verified SSH administration access. The installer intentionally does not change SSH ports, firewall rules, root login policy or swap. The application does not need publicly reachable database or Gunicorn ports.
-
-Use a reviewed commit from the rebuild branch/draft PR. On a trusted development/workstation checkout:
+On a blank Debian 13 server, log in as root and paste this **single line**. It installs the download prerequisites, downloads the installer to a file, then runs it with terminal input intact.
 
 ```sh
-git switch rebuild/web-replacement
-git pull --ff-only
-# Review the exact SHA; do not deploy an unreviewed moving branch automatically.
-git rev-parse HEAD
-git archive --format=tar --prefix=StockLOG/ HEAD | gzip > StockLOG-release.tar.gz
-sha256sum StockLOG-release.tar.gz > StockLOG-release.tar.gz.sha256
-scp StockLOG-release.tar.gz StockLOG-release.tar.gz.sha256 root@YOUR_VPS:/root/
+apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && installer=$(mktemp /root/stocklog-bootstrap.XXXXXXXX) && curl --fail --show-error --location https://raw.githubusercontent.com/Mr-Vale/StockLOG/feature/property-pic-homepage-installer/ops/bootstrap-debian13.sh --output "$installer" && bash "$installer" feature/property-pic-homepage-installer
 ```
 
-Git is used on the workstation only; it is not a hidden prerequisite on the clean VPS. Release archives contain no live database or secrets. Verify the SSH host key through the provider/known trusted channel before the first connection. Do not send credentials in chat.
+This command targets the review branch. After merging, use `main` in both places. Bootstrap clones the repository once and checks out a consistent detached revision; it prints that revision. A reviewed commit SHA can be supplied as its argument instead of the branch name. `ops/bootstrap-debian13.sh` and the documented path are tracked in this release.
 
-## Install on the clean VPS when ready
+## Before running
 
-Log in using your existing administrative SSH method. Replace `stocklog.YOURDOMAIN` with your real domain, not the documentation placeholder.
+- Blank Debian 13 server and root access (or enter a root shell using `sudo -i`).
+- Domain A record points at this server's public IPv4 address. Publish AAAA only with working IPv6.
+- TCP 80/443 reachable for Caddy certificate issuance; retain working SSH access.
+- Approximately 2 GB RAM and at least 1 GB free installation space, plus room for packages, records and backups.
 
-```sh
-cd /root
-sha256sum -c StockLOG-release.tar.gz.sha256
-tar -xzf StockLOG-release.tar.gz
-bash /root/StockLOG/ops/install-debian13.sh --domain stocklog.YOURDOMAIN
-stocklog-manage initial_admin --username YOUR_ADMIN --pic YOUR_PIC --property-name "YOUR PROPERTY"
-```
+The installer leaves SSH, firewall and swap policy unchanged.
 
-The first-admin command prompts securely for a password; no default password/public registration exists. The command refuses to overwrite an existing installation's accounts/property. Passwords must satisfy Django validation (minimum 12 characters and common-password checks).
+## Questions and resulting setup
 
-The installer installs **all prerequisites**: Python venv/development tooling, native mysqlclient build dependencies, MariaDB server/client/dump, Caddy, certificates/keyrings/TLS tooling, age encryption, fonts, archive utilities, OpenSSH client/server and log rotation. It bootstraps hash-locked build tools then installs hash-verified runtime dependencies without unpinned isolated build requirements. Native packages come from signed Debian repositories; artifact/TLS verification stays enabled. No separately installed pip, Caddy, database, compiler or manual venv is assumed. It does not use Docker or install Node/Redis/Celery/cPanel/Nginx.
+The terminal asks for the public domain, administrator username, and administrator password twice. Password input is hidden and checked by Django (minimum 12 characters; common/numeric/similar passwords rejected). Database credentials and application secrets are generated automatically. There is no default password or public registration.
 
-System changes: unprivileged `stocklog` service account, restricted `stocklog-backup` transfer account (no key configured until explicitly enabled), private random configuration under `/etc/stocklog`, MariaDB schema/users with separate runtime/backup grants, root-owned releases under `/opt/stocklog/releases`, `/opt/stocklog/current`, persistent `/var/lib/stocklog`, systemd units/timer, a managed Caddy site, log limits and recovery key. Existing config/secrets are retained on rerun. Unrelated Caddy configuration is refused rather than silently overwritten; the packaged default is preserved as `/etc/caddy/Caddyfile.stocklog-original`.
+Installation configures Python 3.13, MariaDB, Caddy, Gunicorn, pinned Python dependencies, an unprivileged app account, empty schema, static files, systemd app service and daily encrypted backup timer. The installed application uses secure cookies, domain/CSRF allowlists and automatic HTTPS. The installer checks local application health, DNS resolution and public HTTPS health before reporting success.
 
-Copy `/etc/stocklog/recovery.key` to **protected off-server recovery storage** before relying on backups. It is the private key needed to decrypt backups; do not commit it, put it in a public share, or rely on its VPS copy alone. The NAS needs only the restricted SSH transfer key, not this decryption key. See [backup/key custody and restore](BACKUP_RESTORE.md).
+After signing in, add the first property with name, address, owner, optional manager and initial PIC. Add additional PICs from the homepage. Create user accounts through Administration and assign their property access using Manage property access. Administrators can access all properties; standard users see only assigned properties. Save a property/PIC selection to restore it on later logins.
 
-## Check installation before real records
+## Paths and checks
+
+- Private environment: `/etc/stocklog/app.env` (root and application group only).
+- Backup recovery key: `/etc/stocklog/recovery.key` (root only). Copy to protected off-server storage.
+- Releases/current code: `/opt/stocklog/releases/` and `/opt/stocklog/current`.
+- Persistent state/static/backups: `/var/lib/stocklog/`.
+- App and web server logs: `journalctl -u stocklog -u caddy`.
+- Backup logs: `journalctl -u stocklog-backup`.
+- App management: `stocklog-manage check --deploy`.
 
 ```sh
 systemctl status mariadb stocklog caddy stocklog-backup.timer --no-pager
-systemctl list-timers stocklog-backup.timer --all
-journalctl -u stocklog -u caddy -n 100 --no-pager
-curl --fail https://stocklog.YOURDOMAIN/health/
-stocklog-manage check --deploy
+curl --fail https://YOUR_DOMAIN/health/
 systemctl start stocklog-backup.service
 journalctl -u stocklog-backup -n 50 --no-pager
 ```
 
-Check public HTTPS sign-in, CSRF-protected preview/confirmation, a synthetic disposable record workflow, static CSS/JS, and service restart. The installer uses production secure cookies, HTTPS redirects, host/CSRF-origin allowlists and a content security policy. HSTS is set on the application hostname; Django's optional subdomain/preload policy warnings are not silently converted to global domain policy. Decide whether broader HSTS coverage is appropriate before changing it.
+The backup timer runs daily at 16:15 UTC with up to five minutes jitter and missed-run catch-up. Server and NAS each retain three latest successful unique archives. See [backup/restore instructions](BACKUP_RESTORE.md). StockLOG 2 backups have schema version 2 and require matching release/schema fingerprints. Old StockLOG 1 backups must be restored with their matching old release, not this schema.
 
-Backups run at **16:15 UTC daily**, with up to five minutes jitter and missed-run catch-up. This corresponds to 02:15 AEST / 03:15 AEDT the next day in Sydney/Melbourne. Business event timezone remains a property setting, independent of scheduling. Verify the first completed encrypted backup and an isolated restore before entering real operational data. No NAS connection is made by installation.
+## Failures and reruns
 
-## Capacity and persistent state
+The installer reports the failed command line and stops. Fix the underlying error, keeping private configuration and the database. Before a current release has been activated, the same installation command can resume preparation and preserves generated credentials; an existing administrator is never reset. Once `/opt/stocklog/current` exists, reruns refuse to replace the installation. This is a fresh-install entry point, not an automatic updater.
 
-Start with one Gunicorn worker/two threads, soft/hard worker-service memory limits 512/768 MiB, MariaDB buffer pool 384 MiB, maximum 20 DB connections, bounded import sizes and capped logs. The existing swap is left unchanged. `/var/lib/stocklog/backups` keeps the three latest successful unique archives, and publication also needs space for the next candidate and dump. Failures do not delete prior good versions. Watch disk/DB growth and peak report/backup memory; 35 GB is finite and indefinite retention does not permit automatic business-data purge.
+If HTTPS is pending after activation, do not reinstall: check DNS A/AAAA, inbound TCP 80/443 and `journalctl -u caddy`, then retry the HTTPS health check. Check `journalctl -u stocklog` for application failures. Any update to a populated installation requires a separately reviewed, backup-first procedure; never apply this fresh schema over old data.
 
-Application/backup output goes to journald (128 MiB disk / 32 MiB runtime limits); the optional application file-log directory has four compressed weekly rotations. Use `journalctl` and systemd exit status to monitor failed timer runs. No external notification delivery is configured automatically.
-
-## Updates and failures
-
-The install entry point is repeatable: transfer a new reviewed release and invoke it with the same domain. It refuses unexpected domains/configuration, preserves secrets/accounts/data, installs a versioned release, serialises against backup operations, stops the web service before migrations, validates configuration and switches `/opt/stocklog/current` only after preparation. Back up first and schedule an update window; migrations and MariaDB package/restart operations can cause downtime. It is not a zero-downtime deployment system.
-
-A failed update can leave the web service stopped for diagnosis. Review the logs and database migration state; do not blindly reset a populated database or run old code against a changed schema. Retained release directories support code rollback only when schema compatibility is verified. For data recovery use a validated isolated restore and explicit activation, retaining the old database and private pre-restore configuration.
-
-`--no-start` is an **isolated image/test option**, not a production install recommendation. It starts MariaDB through the available service helper but skips systemd application/Caddy startup. Tests using this option cannot claim real systemd PID-1 boot or public ACME issuance is verified. Production installation uses the normal command above.
+`--no-start` remains an isolated-image option. It does not verify systemd boot, public DNS or ACME. Full Debian installation/reboot verification must be recorded separately from shell syntax and functional application tests; see [upgrade validation](../testing/PROPERTY_PIC_RESULTS.md).

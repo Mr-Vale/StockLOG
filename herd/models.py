@@ -17,13 +17,33 @@ def decimal_field(default=0):
 
 class Property(models.Model):
     name = models.CharField(max_length=160)
-    pic = models.CharField(max_length=32, unique=True)
+    address = models.TextField()
+    owner = models.CharField(max_length=160)
+    manager = models.CharField(max_length=160, blank=True)
     timezone = models.CharField(max_length=64, default="Australia/Melbourne")
     version = models.PositiveBigIntegerField(default=0)
 
+    def __str__(self):
+        return self.name
+
+
+class PIC(models.Model):
+    property = models.ForeignKey(
+        Property, related_name="pics", on_delete=models.PROTECT
+    )
+    number = models.CharField(max_length=8, unique=True)
+
+    def __str__(self):
+        return self.number
+
 
 class Account(AbstractUser):
-    property = models.ForeignKey(Property, on_delete=models.PROTECT, null=True)
+    property = models.ForeignKey(
+        Property, on_delete=models.PROTECT, null=True, blank=True
+    )
+    pic = models.ForeignKey(PIC, on_delete=models.SET_NULL, null=True, blank=True)
+    properties = models.ManyToManyField(Property, related_name="users", blank=True)
+    chart_preferences = models.JSONField(default=dict, blank=True)
     role = models.CharField(
         max_length=16,
         choices=[("admin", "Administrator"), ("standard", "Standard user")],
@@ -45,6 +65,7 @@ class Scoped(models.Model):
 
 
 class Event(Scoped):
+    pic = models.ForeignKey(PIC, null=True, on_delete=models.PROTECT)
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     kind = models.CharField(max_length=24)
     effective_at = models.BigIntegerField(db_index=True)
@@ -53,7 +74,9 @@ class Event(Scoped):
     actor = models.ForeignKey(Account, on_delete=models.PROTECT)
     details = models.JSONField(default=dict)
     before = models.JSONField(default=dict)
-    reversed_by = models.ForeignKey("self", null=True, blank=True, on_delete=models.PROTECT)
+    reversed_by = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.PROTECT
+    )
 
     class Meta:
         ordering = ["effective_at", "effective_order", "submitted_at", "id"]
@@ -68,11 +91,14 @@ class Submission(Scoped):
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=["property", "actor", "key"], name="submission_once")
+            models.UniqueConstraint(
+                fields=["property", "actor", "key"], name="submission_once"
+            )
         ]
 
 
 class Animal(Scoped):
+    pic = models.ForeignKey(PIC, on_delete=models.PROTECT)
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     breed = models.CharField(max_length=80, blank=True)
     sex = models.CharField(max_length=24, blank=True)
@@ -89,13 +115,17 @@ class Animal(Scoped):
             self.identifiers.filter(current=True, kind="nlis")
             .values_list("value", flat=True)
             .first()
-            or self.identifiers.filter(current=True).values_list("value", flat=True).first()
+            or self.identifiers.filter(current=True)
+            .values_list("value", flat=True)
+            .first()
             or str(self.id)
         )
 
 
 class Identifier(models.Model):
-    animal = models.ForeignKey(Animal, related_name="identifiers", on_delete=models.PROTECT)
+    animal = models.ForeignKey(
+        Animal, related_name="identifiers", on_delete=models.PROTECT
+    )
     kind = models.CharField(max_length=8)
     value = models.CharField(max_length=16, db_collation="utf8mb4_bin")
     current = models.BooleanField(default=True)
@@ -123,23 +153,31 @@ class Identifier(models.Model):
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=["kind", "value"], name="identifier_permanent_nonreuse"),
+            models.UniqueConstraint(
+                fields=["kind", "value"], name="identifier_permanent_nonreuse"
+            ),
             models.CheckConstraint(
                 condition=Q(kind="nlis") & Exact(Length("value"), 16)
-                | Q(kind="rfid", value__regex=r"^[0-9]{15}$") & Exact(Length("value"), 15),
+                | Q(kind="rfid", value__regex=r"^[0-9]{15}$")
+                & Exact(Length("value"), 15),
                 name="identifier_format",
             ),
         ]
 
 
 class Presence(models.Model):
-    animal = models.ForeignKey(Animal, related_name="presence", on_delete=models.PROTECT)
+    pic = models.ForeignKey(PIC, on_delete=models.PROTECT)
+    animal = models.ForeignKey(
+        Animal, related_name="presence", on_delete=models.PROTECT
+    )
     start = models.BigIntegerField()
     start_order = models.PositiveIntegerField(default=0)
     end = models.BigIntegerField(null=True)
     end_order = models.PositiveIntegerField(null=True)
     arrival = models.ForeignKey(Event, related_name="+", on_delete=models.PROTECT)
-    departure = models.ForeignKey(Event, related_name="+", null=True, on_delete=models.PROTECT)
+    departure = models.ForeignKey(
+        Event, related_name="+", null=True, on_delete=models.PROTECT
+    )
 
     class Meta:
         indexes = [models.Index(fields=["animal", "start", "end"])]
@@ -152,17 +190,20 @@ class Presence(models.Model):
 
 
 class Mob(Scoped):
+    pic = models.ForeignKey(PIC, on_delete=models.PROTECT)
     name = models.CharField(max_length=80)
     retired = models.BooleanField(default=False)
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=["property", "name"], name="mob_property_name")
+            models.UniqueConstraint(fields=["pic", "name"], name="mob_pic_name")
         ]
 
 
 class Membership(models.Model):
-    animal = models.ForeignKey(Animal, related_name="memberships", on_delete=models.PROTECT)
+    animal = models.ForeignKey(
+        Animal, related_name="memberships", on_delete=models.PROTECT
+    )
     mob = models.ForeignKey(Mob, on_delete=models.PROTECT)
     start = models.BigIntegerField()
     start_order = models.PositiveIntegerField(default=0)
@@ -185,30 +226,42 @@ class Membership(models.Model):
 
 
 class Participant(models.Model):
-    event = models.ForeignKey(Event, related_name="participants", on_delete=models.PROTECT)
+    event = models.ForeignKey(
+        Event, related_name="participants", on_delete=models.PROTECT
+    )
     animal = models.ForeignKey(Animal, on_delete=models.PROTECT)
     snapshot = models.JSONField(default=dict)
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=["event", "animal"], name="event_participant_once")
+            models.UniqueConstraint(
+                fields=["event", "animal"], name="event_participant_once"
+            )
         ]
 
 
 class Allocation(models.Model):
-    event = models.ForeignKey(Event, related_name="allocations", on_delete=models.PROTECT)
-    animal = models.ForeignKey(Animal, related_name="allocations", on_delete=models.PROTECT)
+    event = models.ForeignKey(
+        Event, related_name="allocations", on_delete=models.PROTECT
+    )
+    animal = models.ForeignKey(
+        Animal, related_name="allocations", on_delete=models.PROTECT
+    )
     category = models.CharField(max_length=20)
     amount = decimal_field()
     presence = models.ForeignKey(
         Presence, related_name="allocations", null=True, on_delete=models.PROTECT
     )
     unknown = models.BooleanField(default=False)
-    resolved_by = models.ForeignKey(Event, related_name="+", null=True, on_delete=models.PROTECT)
+    resolved_by = models.ForeignKey(
+        Event, related_name="+", null=True, on_delete=models.PROTECT
+    )
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=["event", "animal", "category"], name="allocation_once")
+            models.UniqueConstraint(
+                fields=["event", "animal", "category"], name="allocation_once"
+            )
         ]
 
 
@@ -221,7 +274,9 @@ class AttributeChange(models.Model):
 
 
 class Inventory(Scoped):
-    kind = models.CharField(max_length=12, choices=[("feed", "Feed"), ("chemical", "Chemical")])
+    kind = models.CharField(
+        max_length=12, choices=[("feed", "Feed"), ("chemical", "Chemical")]
+    )
     name = models.CharField(max_length=120)
     feed_type = models.CharField(max_length=24, blank=True)
     category = models.CharField(max_length=24, default="veterinary")
@@ -251,7 +306,9 @@ class Inventory(Scoped):
                 name="chemicals_never_negative",
             ),
             models.CheckConstraint(
-                condition=Q(package_size__gt=0, base_per_package__gt=0, package_price__gte=0),
+                condition=Q(
+                    package_size__gt=0, base_per_package__gt=0, package_price__gte=0
+                ),
                 name="inventory_positive_spec",
             ),
         ]
@@ -260,7 +317,9 @@ class Inventory(Scoped):
     def packages_remaining(self):
         with localcontext() as ctx:
             ctx.prec = 60
-            return (self.balance / self.base_per_package).quantize(Decimal("0.000000000001"))
+            return (self.balance / self.base_per_package).quantize(
+                Decimal("0.000000000001")
+            )
 
     @builtins.property
     def cost_per_stock_unit(self):
@@ -287,20 +346,28 @@ class Inventory(Scoped):
 
 
 class StockPosting(models.Model):
-    event = models.ForeignKey(Event, related_name="stock_postings", on_delete=models.PROTECT)
-    item = models.ForeignKey(Inventory, related_name="postings", on_delete=models.PROTECT)
+    event = models.ForeignKey(
+        Event, related_name="stock_postings", on_delete=models.PROTECT
+    )
+    item = models.ForeignKey(
+        Inventory, related_name="postings", on_delete=models.PROTECT
+    )
     quantity = decimal_field()
     value = decimal_field()
 
 
 class Restriction(models.Model):
     event = models.ForeignKey(Event, on_delete=models.PROTECT)
-    animal = models.ForeignKey(Animal, related_name="restrictions", on_delete=models.PROTECT)
+    animal = models.ForeignKey(
+        Animal, related_name="restrictions", on_delete=models.PROTECT
+    )
     starts_at = models.BigIntegerField()
     ends_at = models.BigIntegerField()
     days = models.PositiveIntegerField()
     timezone = models.CharField(max_length=64)
-    superseded_by = models.ForeignKey(Event, related_name="+", null=True, on_delete=models.PROTECT)
+    superseded_by = models.ForeignKey(
+        Event, related_name="+", null=True, on_delete=models.PROTECT
+    )
 
 
 class Audit(Scoped):
@@ -318,6 +385,7 @@ class ReportTemplate(Scoped):
 
 
 class ImportPreview(Scoped):
+    pic = models.ForeignKey(PIC, on_delete=models.PROTECT)
     id = models.UUIDField(primary_key=True, default=uuid.uuid4)
     actor = models.ForeignKey(Account, on_delete=models.PROTECT)
     created_at = models.BigIntegerField(default=now)
