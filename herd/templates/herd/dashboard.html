@@ -1,23 +1,22 @@
 {% extends 'herd/base.html' %}{% load static %}{% block content %}
 <h1>{% if request.context_ready %}{{ user.property.name }} Property Summary{% else %}Choose your property and PIC{% endif %}</h1>
-<form id="property-selection" action="{% url 'select_context' %}" method="post" class="selection" data-selected-property="{{ user.property_id|default:'' }}" data-selected-pic="{{ user.pic_id|default:'' }}">
+<details id="selection-card" {% if not request.session.selection_compact or not user.pic_id or request.GET.selection == 'expand' %}open{% endif %}><summary>Property / PIC selection — change or save your default</summary><form id="property-selection" action="{% url 'select_context' %}" method="post" class="selection" data-selected-property="{{ user.property_id|default:'' }}" data-selected-pic="{{ user.pic_id|default:'' }}">
 {% csrf_token %}<label>Property<select name="property" id="property-select"><option value="">Select property</option>{% for prop in properties %}<option value="{{ prop.pk }}" {% if prop.pk == user.property_id %}selected{% endif %}>{{ prop.name }}</option>{% endfor %}</select></label>
 <label>PIC<select name="pic" id="pic-select" disabled><option value="">Select a property first</option></select></label>
 <button type="submit" name="save" value="1">Save selection</button><p id="selection-status" role="status">Save to remember this selection for your next login.</p>
-</form>
-{% if not properties %}<p>No properties are available. {% if user.administrator %}Add your first property and PIC to get started.{% else %}Contact your administrator for access.{% endif %}</p>{% endif %}
-{% if user.administrator %}<div class="admin-controls"><a class="button" href="{% url 'add_property' %}">Add property</a><a id="add-pic" class="button" href="{% url 'add_pic' %}" {% if not user.property_id %}hidden{% endif %}>Add PIC</a><a class="button" href="{% url 'access' %}">Manage property access</a></div>{% endif %}
+</form></details>
+{% if not properties %}<p>No properties are available. {% if user.administrator %}<a href="{% url 'accounts' %}">Open Administration to add your first property and PIC.</a>{% else %}Contact your administrator for access.{% endif %}</p>{% endif %}
 <section id="switching" hidden aria-live="polite"><span class="spinner" aria-hidden="true"></span><h2>Changing property / PIC</h2><p id="switch-destination"></p><p>Please pause before recording changes in this selection.</p></section>
 <div id="farm-data" {% if not request.context_ready %}hidden{% endif %}>
 {% if request.context_ready %}
 <p>Summary: all PICs in {{ user.property.name }}. Activities use <strong>{{ user.pic.number }}</strong>. Inventory is shared across this property.</p>
 <div class="cards">{% for pic in pic_summary %}<article><h2>PIC {{ pic.number }}</h2><p><strong>{{ pic.cattle }}</strong> active cattle</p><p><strong>{{ pic.mobs }}</strong> current mobs</p></article>{% endfor %}</div>
 <p class="helptext">Current mobs include empty mobs; retired mobs are excluded.</p>
+<h2>Record an activity</h2><div class="cards primary-actions"><a href="{% url 'workflow' 'entry' %}">Cattle Entry</a><a href="{% url 'workflow' 'exit' %}">Cattle Exit</a><a href="{% url 'workflow' 'treatment' %}">Cattle Treatment</a><a href="{% url 'workflow' 'feeding' %}">Cattle Feeding</a></div>
+<h2>View and manage data</h2><div class="cards data-actions"><a href="{% url 'animals' %}">Active Cattle</a><a href="{% url 'inventory' %}?kind=feed">Feed Inventory</a><a href="{% url 'inventory' %}?kind=chemical">Chemical Inventory</a><a href="{% url 'mobs' %}">MOBs</a><a href="{% url 'reports' %}">Reports</a></div>
 <form method="post" action="{% url 'charts' %}" class="chart-form">{% csrf_token %}<input type="hidden" name="farm_context" value="{{ request.farm_context }}"><div class="chart-grid">
 {% for chart in charts %}<article class="chart-card"><h2>{{ chart.title }}</h2><label>Display<select name="{{ chart.key }}" data-chart-select="{{ chart.key }}"><option value="pie" {% if chart.display == 'pie' %}selected{% endif %}>Pie</option><option value="bar" {% if chart.display == 'bar' %}selected{% endif %}>Bar</option></select></label><canvas width="320" height="240" data-chart="{{ chart.key }}" role="img" aria-label="{{ chart.title }}; counts listed below"></canvas><ul>{% for row in chart.rows %}<li>{{ row.label }}: {{ row.count }}</li>{% empty %}<li>No active cattle</li>{% endfor %}</ul></article>{% endfor %}</div><button>Save chart preferences</button></form>
 <p class="helptext">Age boundaries are 0–under 3, 3–under 12, 12–under 24, and 24+ calendar months. Unknown ages are shown separately.</p>
-<h2>Record an activity</h2><div class="cards primary-actions"><a href="{% url 'workflow' 'entry' %}">Cattle Entry</a><a href="{% url 'workflow' 'exit' %}">Cattle Exit</a><a href="{% url 'workflow' 'treatment' %}">Cattle Treatment</a><a href="{% url 'workflow' 'feeding' %}">Cattle Feeding</a></div>
-<h2>View and manage data</h2><div class="cards data-actions"><a href="{% url 'animals' %}">Active Cattle</a><a href="{% url 'inventory' %}?kind=feed">Feed Inventory</a><a href="{% url 'inventory' %}?kind=chemical">Chemical Inventory</a><a href="{% url 'mobs' %}">MOBs</a><a href="{% url 'reports' %}">Reports</a></div>
 {% endif %}</div>
 {{ property_data|json_script:'property-data' }}{{ charts|default_if_none:''|json_script:'chart-data' }}
 <script src="{% static 'herd/home.js' %}" defer></script>

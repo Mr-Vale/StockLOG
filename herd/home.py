@@ -125,10 +125,11 @@ def select_context(request):
     request.session["farm_selection"] = pair
     if changed:
         request.session["farm_generation"] = uuid.uuid4().hex
-        request.session["farm_ready_at"] = time.time() + 15
+        request.session["farm_ready_at"] = time.time() + 5
     # Persist only an explicit Save; changing selection remains session-local.
     if request.POST.get("save") == "1":
         Account.objects.filter(pk=request.user.pk).update(property=prop, pic=pic)
+        request.session["selection_compact"] = True
     return JsonResponse(
         {
             "wait_ms": max(
@@ -288,6 +289,9 @@ def workflow(request, group):
         from django.http import Http404
 
         raise Http404
+    if group == "entry":
+        from .entry import entry
+        return entry(request)
     title, actions = groups[group]
     return render(request, "herd/workflow.html", {"title": title, "actions": actions})
 

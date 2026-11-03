@@ -60,11 +60,9 @@ def test_phone_registration_desktop_reports_and_admin_boundaries(farm, live_serv
         page.locator("[name=nvd]").fill("TEST-NVD")
         page.locator("[name=purchase_cost]").fill("100")
         page.locator("[name=sex]").select_option("M")
-        page.get_by_role("button", name="Preview effects").click()
-        expect(
-            page.get_by_role("heading", name="Review before confirming")
-        ).to_be_visible()
-        page.get_by_role("button", name="Confirm and save").click()
+        page.get_by_role("button", name="Add to list").click()
+        expect(page.get_by_role("heading", name="Review animals (1)")).to_be_visible()
+        page.get_by_role("button", name="Save animals", exact=True).click()
         expect(page.get_by_role("heading", name="Saved and confirmed")).to_be_visible()
         assert db_query(lambda: Animal.objects.count()) == 1
         page.goto(live_server.url + "/animals/")
@@ -232,7 +230,7 @@ def test_property_homepage_screenshots_and_transition(farm, live_server):
         expect(page.locator("#switching")).to_be_visible()
         expect(page.locator("#farm-data")).to_be_hidden()
         expect(page.locator("#property-select")).to_be_enabled()
-        page.clock.fast_forward(14000)
+        page.clock.fast_forward(4000)
         expect(page.locator("#switching")).to_be_visible()
         # Advance server session deadline as well; no production test hook is introduced.
         session = page.context.cookies()

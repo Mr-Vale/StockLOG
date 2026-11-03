@@ -92,3 +92,41 @@ def test_concurrent_same_submission_returns_same_event(farm):
         t.join(20)
         assert not t.is_alive()
     assert len(ids) == 2 and ids[0] == ids[1] and Animal.objects.count() == 1
+
+
+@pytest.mark.django_db(transaction=True)
+def test_concurrent_entries_cannot_duplicate_identity_or_occupancy(farm):
+    from django.db import IntegrityError
+
+    from herd.models import Presence
+
+    _, a, b, c = farm
+    barrier = threading.Barrier(2)
+    outcomes = []
+
+    def submit(pk):
+        close_old_connections()
+        try:
+            user = Account.objects.get(pk=pk)
+            barrier.wait(timeout=10)
+            with clock.at(T):
+                s.execute(
+                    user,
+                    uuid.uuid4().hex,
+                    "register",
+                    {"nlis": "CONCURRENT000001", "source_pic": "SRC", "nvd": "N"},
+                )
+            outcomes.append("saved")
+        except (ValidationError, IntegrityError):
+            outcomes.append("rejected")
+        finally:
+            connections.close_all()
+
+    threads = [threading.Thread(target=submit, args=(u.pk,)) for u in [b, c]]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(20)
+        assert not t.is_alive()
+    assert sorted(outcomes) == ["rejected", "saved"]
+    assert Animal.objects.count() == 1 and Presence.objects.filter(end__isnull=True).count() == 1

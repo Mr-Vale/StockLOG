@@ -32,12 +32,17 @@
       if (!response.ok) throw new Error(result.error || 'Selection failed.');
       property.disabled = pic.disabled = form.querySelector('button').disabled = false;
       if (own !== sequence) return;
+      if (save) document.querySelector("#selection-card").open = false;
       status.textContent = save ? 'Selection saved for your next login.' : 'Selection changed for this session. Use Save selection to remember it.';
       timer = setTimeout(async () => {
         if (own !== sequence) return;
         try {
           const ready = await fetch('/context/ready/', {cache:'no-store'});
           if (!ready.ok || !(await ready.json()).ready) throw new Error('Selection is not ready. Please select it again.');
+          if (save) {
+            const url = new URL(location.href); url.searchParams.delete('selection');
+            history.replaceState(null, '', url);
+          }
           location.reload();
         } catch (error) { switching.hidden = true; status.textContent = error.message; }
       }, result.wait_ms + 100);

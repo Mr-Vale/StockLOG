@@ -12,8 +12,8 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.db.models import Q, Sum
 
-from .context import scope, validate_context
 from . import clock
+from .context import scope, validate_context
 from .models import (
     Account,
     Allocation,
@@ -239,9 +239,7 @@ def execute(actor, key, kind, data, expected_version=None):
         raise ValidationError("A stable submission identifier is required.")
     payload = clean(data)
     digest = hashlib.sha256(
-        json.dumps(
-            {"kind": kind, "pic": actor.pic_id, "data": payload}, sort_keys=True
-        ).encode()
+        json.dumps({"kind": kind, "pic": actor.pic_id, "data": payload}, sort_keys=True).encode()
     ).hexdigest()
     with transaction.atomic(), localcontext() as ctx:
         ctx.prec = 60
@@ -249,9 +247,7 @@ def execute(actor, key, kind, data, expected_version=None):
         fresh = validate_context(actor)
         fresh.property, fresh.pic = prop, actor.pic
         actor = fresh
-        prior = Submission.objects.filter(
-            property=prop, actor=actor, key=str(key)
-        ).first()
+        prior = Submission.objects.filter(property=prop, actor=actor, key=str(key)).first()
         if prior:
             if prior.digest != digest:
                 raise ValidationError(
@@ -262,7 +258,17 @@ def execute(actor, key, kind, data, expected_version=None):
             raise ValidationError(
                 "Property records changed since preview. Review the updated stock, membership and effects before confirming."
             )
-        at = int(payload.get("effective_at", clock.now()))
+        date_rows = payload.get("rows") or [payload]
+        entry_dates = (
+            [
+                clock.local_timestamp(str(r["entry_date"]) + "T00:00:00", actor.property.timezone)
+                for r in date_rows
+                if r.get("entry_date")
+            ]
+            if kind == "register"
+            else []
+        )
+        at = min(entry_dates) if entry_dates else int(payload.get("effective_at", clock.now()))
         if at > clock.now():
             raise ValidationError("Future-dated business events are not accepted.")
         handler = HANDLERS.get(kind)
@@ -278,7 +284,7 @@ def execute(actor, key, kind, data, expected_version=None):
             details=payload,
         )
         result = handler(actor, event, payload) or {}
-        event.details = clean({**payload, **result})
+        event.details = clean({**payload, **event.details, **result})
         event.save()
         prop.version += 1
         prop.save(update_fields=["version"])
@@ -330,127 +336,205 @@ def register(actor, event, data):
         raise ValidationError("Import must contain 1–2000 selected rows.")
     result = []
     seen = set()
-    for row in rows:
-        nlis, rfid = row.get("nlis", ""), row.get("rfid", "")
-        if not (nlis or rfid):
-            raise ValidationError("At least one animal identifier is required.")
-        for kind, val in [("nlis", nlis), ("rfid", rfid)]:
-            if val:
-                v = validate_identifier(kind, val)
-                if (kind, v) in seen:
-                    raise ValidationError(
-                        "Duplicate identifier within the selected import."
-                    )
-                seen.add((kind, v))
-        at = int(row.get("effective_at", event.effective_at))
-        if at > clock.now():
-            raise ValidationError("Arrival cannot be future-dated.")
-        source = row.get("entry_source", "purchase")
-        if source not in ["purchase", "birth", "repurchase"]:
-            raise ValidationError("Choose purchase, birth or repurchase.")
-        if source != "birth" and (not row.get("source_pic") or not row.get("nvd")):
-            raise ValidationError("Purchased arrivals require source PIC and NVD.")
-        if source == "birth":
-            mother = validate_identifier("nlis", row.get("mother_nlis", ""))
-            if mother == str(nlis).strip().upper():
-                raise ValidationError("An animal cannot be its own mother.")
-            cost = Decimal(0)
-        else:
-            cost = (
-                number(row["purchase_cost"], nonnegative=True)
-                if row.get("purchase_cost") not in [None, ""]
-                else None
-            )
-        linked = list(
-            Identifier.objects.filter(
-                Q(kind="nlis", value=str(nlis).strip().upper())
-                | Q(kind="rfid", value=str(rfid).strip())
-            )
-            .values_list("animal_id", flat=True)
-            .distinct()
-        )
-        if len(linked) > 1:
+    seen_animals = set()
+    for row_number, original_row in enumerate(rows, 1):
+        row = dict(original_row)
+        try:
+            result.append(_register_row(actor, event, row, seen, seen_animals))
+        except (ValidationError, ValueError, TypeError) as exc:
             raise ValidationError(
-                "The supplied tags belong to different animals. Administrator resolution required."
+                f"Row {row_number}: " + "; ".join(getattr(exc, "messages", [str(exc)]))
             )
-        if linked:
-            if source != "repurchase":
-                raise ValidationError(
-                    "An identifier is already permanently reserved; choose repurchase only for the same exited animal."
-                )
-            a = Animal.objects.filter(pk=linked[0], property=actor.property).first()
-            if a is None:
-                raise ValidationError(
-                    "This identifier belongs to another property; administrator review is required."
-                )
-            if a.purged:
-                raise ValidationError(
-                    "This permanently reserved identity was retention-redacted. Administrator review/authoritative recovery is required before repurchase; it cannot become a new animal."
-                )
+    return {"animals": result, "count": len(result)}
+
+
+def _register_row(actor, event, row, seen, seen_animals):
+    nlis, rfid = row.get("nlis", ""), row.get("rfid", "")
+    if not (nlis or rfid):
+        raise ValidationError("At least one animal identifier is required.")
+    for kind, val in [("nlis", nlis), ("rfid", rfid)]:
+        if val:
+            v = validate_identifier(kind, val)
+            if (kind, v) in seen:
+                raise ValidationError("Duplicate identifier within the selected import.")
+            seen.add((kind, v))
+    if row.get("entry_date"):
+        day = date.fromisoformat(str(row["entry_date"]))
+        local_today = (
+            __import__("datetime")
+            .datetime.fromtimestamp(clock.now(), ZoneInfo(actor.property.timezone))
+            .date()
+        )
+        if day < local_today:
+            administrator(actor)
+        if day > local_today:
+            raise ValidationError("Future event dates are not accepted.")
+        # Local midnight preserves the calendar date across DST. Date-only entry
+        # does not alter timestamps used by unrelated workflows/imports.
+        at = clock.local_timestamp(day.isoformat() + "T00:00:00", actor.property.timezone)
+    else:
+        at = int(row.get("effective_at", event.effective_at))
+    if at > clock.now():
+        raise ValidationError("Arrival cannot be future-dated.")
+    source = row.get("entry_source", "purchase")
+    if source not in ["purchase", "birth", "repurchase"]:
+        raise ValidationError("Choose purchase, birth or repurchase.")
+    if source != "birth" and (not row.get("source_pic") or not row.get("nvd")):
+        raise ValidationError("Purchased arrivals require source PIC and NVD.")
+    if source == "birth":
+        row.update(
+            source_pic=actor.pic.number,
+            vendor_name=actor.property.name,
+            vendor_address=actor.property.address,
+            purchase_cost="0",
+        )
+        mother = str(row.get("mother_nlis", "")).strip().upper()
+        if mother:
+            mother = validate_identifier("rfid" if len(mother) == 15 else "nlis", mother)
+            row["mother_identifier_kind"] = "rfid" if len(mother) == 15 else "nlis"
+            row["mother_nlis"] = mother
+        event.details.setdefault("birth_sources", []).append(clean(row))
+        if mother and mother in [str(nlis).strip().upper(), str(rfid).strip()]:
+            raise ValidationError("An animal cannot be its own mother.")
+        cost = Decimal(0)
+    else:
+        cost = (
+            number(row["purchase_cost"], nonnegative=True)
+            if row.get("purchase_cost") not in [None, ""]
+            else None
+        )
+    linked = list(
+        Identifier.objects.filter(
+            Q(kind="nlis", value=str(nlis).strip().upper())
+            | Q(kind="rfid", value=str(rfid).strip())
+        )
+        .values_list("animal_id", flat=True)
+        .distinct()
+    )
+    if len(linked) > 1:
+        raise ValidationError(
+            "The supplied tags belong to different animals. Administrator resolution required."
+        )
+    if linked and linked[0] in seen_animals:
+        raise ValidationError(
+            "Multiple rows refer to the same animal through different identifiers."
+        )
+    if linked:
+        if source != "repurchase":
+            raise ValidationError(
+                "An identifier is already permanently reserved; choose repurchase only for the same exited animal."
+            )
+        a = (
+            Animal.objects.select_for_update()
+            .filter(pk=linked[0], property=actor.property, pic=actor.pic)
+            .first()
+        )
+        if a is None:
+            raise ValidationError(
+                "This animal does not qualify for Re-Purchase on the selected PIC. Use Purchase for a new identity; reserved tags require administrator review and cannot be reused."
+            )
+        if a.pk in seen_animals:
+            raise ValidationError(
+                "Multiple rows refer to the same animal through different identifiers."
+            )
+        for tag_kind, tag_value in [("nlis", nlis), ("rfid", rfid)]:
             if (
-                a.status != "exited"
-                or a.presence.filter(
-                    Q(end__isnull=True)
-                    | Q(end__gt=at)
-                    | Q(end=at, end_order__gte=event.effective_order)
+                tag_value
+                and not Identifier.objects.filter(
+                    animal=a, kind=tag_kind, value=validate_identifier(tag_kind, tag_value)
                 ).exists()
             ):
                 raise ValidationError(
-                    "Only a previously sold animal may be repurchased after its latest exit."
+                    "Each Re-Purchase identifier must already identify this same animal. Use the identifier correction workflow for new tags."
                 )
-        else:
-            if source == "repurchase":
-                raise ValidationError(
-                    "Repurchase requires an existing animal identity."
-                )
-            a = Animal.objects.create(property=actor.property, pic=actor.pic)
-        for field in ["breed", "sex", "mother_nlis"]:
-            if row.get(field):
-                setattr(a, field, row[field])
-        if row.get("dob"):
-            a.dob = date.fromisoformat(str(row["dob"]))
-            if (
-                a.dob
-                > __import__("datetime")
-                .datetime.fromtimestamp(at, ZoneInfo(actor.property.timezone))
-                .date()
-            ):
-                raise ValidationError("Birth date cannot be later than arrival.")
-        if row.get("estimated_weeks") not in [None, ""]:
-            weeks = int(row["estimated_weeks"])
-            if weeks < 0:
-                raise ValidationError("Age cannot be negative.")
-            a.estimated_weeks, a.age_reference = weeks, at
-        a.status = "active"
-        a.pic = actor.pic
-        a.save()
+        if a.purged:
+            raise ValidationError(
+                "This permanently reserved identity was retention-redacted. Administrator review/authoritative recovery is required before repurchase; it cannot become a new animal."
+            )
+        latest_visit = (
+            a.presence.order_by("-start", "-start_order").select_related("departure").first()
+        )
+        if (
+            not latest_visit
+            or latest_visit.pic_id != actor.pic_id
+            or latest_visit.end is None
+            or latest_visit.departure is None
+            or latest_visit.departure.kind != "sale"
+            or latest_visit.departure.reversed_by_id is not None
+            or a.status != "exited"
+            or a.presence.filter(
+                Q(end__isnull=True)
+                | Q(end__gt=at)
+                | Q(end=at, end_order__gte=event.effective_order)
+            ).exists()
+        ):
+            raise ValidationError(
+                "Only a previously sold animal may be repurchased after its latest exit."
+            )
+    else:
+        if source == "repurchase":
+            raise ValidationError("Repurchase requires an existing animal identity.")
+        a = Animal.objects.create(property=actor.property, pic=actor.pic)
+    if a.pk in seen_animals:
+        raise ValidationError(
+            "Multiple rows refer to the same animal through different identifiers."
+        )
+    seen_animals.add(a.pk)
+    for field in ["breed", "sex", "mother_nlis"]:
+        if row.get(field):
+            setattr(a, field, row[field])
+    if row.get("dob"):
+        a.dob = date.fromisoformat(str(row["dob"]))
+        if (
+            a.dob
+            > __import__("datetime")
+            .datetime.fromtimestamp(at, ZoneInfo(actor.property.timezone))
+            .date()
+        ):
+            raise ValidationError("Birth date cannot be later than arrival.")
+    if (
+        a.dob
+        and a.dob
+        > __import__("datetime")
+        .datetime.fromtimestamp(at, ZoneInfo(actor.property.timezone))
+        .date()
+    ):
+        raise ValidationError("Birth date cannot be later than arrival.")
+    if row.get("estimated_weeks") not in [None, ""]:
+        weeks = int(row["estimated_weeks"])
+        if weeks < 0:
+            raise ValidationError("Age cannot be negative.")
+        a.estimated_weeks, a.age_reference = weeks, at
+    a.status = "active"
+    a.pic = actor.pic
+    a.save()
+    if source != "repurchase":
         if nlis:
             attach(event, a, "nlis", nlis)
         if rfid:
             attach(event, a, "rfid", rfid)
-        visit = Presence.objects.create(
+    row["effective_at"] = at
+    event.details.setdefault("entry_rows", []).append(clean(row))
+    visit = Presence.objects.create(
+        animal=a,
+        pic=actor.pic,
+        start=at,
+        start_order=event.effective_order,
+        arrival=event,
+    )
+    allocate(event, [a], -(cost or 0), "purchase", unknown=cost is None, presence=visit)
+    if row.get("mob"):
+        mob = scoped(Mob, actor, row["mob"])
+        if mob.retired:
+            raise ValidationError("Select a current mob.")
+        Membership.objects.create(
             animal=a,
-            pic=actor.pic,
+            mob=mob,
             start=at,
             start_order=event.effective_order,
-            arrival=event,
+            event=event,
         )
-        allocate(
-            event, [a], -(cost or 0), "purchase", unknown=cost is None, presence=visit
-        )
-        if row.get("mob"):
-            mob = scoped(Mob, actor, row["mob"])
-            if mob.retired:
-                raise ValidationError("Select a current mob.")
-            Membership.objects.create(
-                animal=a,
-                mob=mob,
-                start=at,
-                start_order=event.effective_order,
-                event=event,
-            )
-        result.append(str(a.id))
-    return {"animals": result, "count": len(result)}
+    return str(a.id)
 
 
 def mob_create(actor, event, data):

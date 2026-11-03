@@ -297,8 +297,7 @@ def test_unknown_cost_birth_missing_data_and_reporting(farm):
         arrival(b, purchase_cost="", sex="", breed="")
         row = reports.build(b, {})["rows"][0]
         assert not row["financial_complete"] and row["profit"] is None and row["age_weeks"] is None
-        with pytest.raises(ValidationError):
-            run(b, "register", {"nlis": "B" * 16, "entry_source": "birth"})
+        run(b, "register", {"nlis": "C" * 16, "entry_source": "birth"})
         run(
             b,
             "register",

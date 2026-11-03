@@ -16,9 +16,7 @@ pytestmark = pytest.mark.django_db
 
 
 def another_property():
-    p = Property.objects.create(
-        name="Timberley", address="Test road", owner="Test owner"
-    )
+    p = Property.objects.create(name="Timberley", address="Test road", owner="Test owner")
     return p, PIC.objects.create(property=p, number="TEST0003")
 
 
@@ -63,17 +61,11 @@ def test_selection_saved_default_revocation_and_wrong_pic(farm):
     page = c.get("/")
     assert b"Timberley" not in page.content
     assert (
-        c.post(
-            "/context/select/", {"property": other.pk, "pic": other_pic.pk}
-        ).status_code
-        == 400
+        c.post("/context/select/", {"property": other.pk, "pic": other_pic.pk}).status_code == 400
     )
-    assert (
-        c.post("/context/select/", {"property": p.pk, "pic": other_pic.pk}).status_code
-        == 400
-    )
+    assert c.post("/context/select/", {"property": p.pk, "pic": other_pic.pk}).status_code == 400
     response = c.post("/context/select/", {"property": p.pk, "pic": second.pk})
-    assert 14000 <= response.json()["wait_ms"] <= 15000
+    assert 4000 <= response.json()["wait_ms"] <= 5000
     assert c.get("/animals/").status_code == 302
     b.refresh_from_db()
     assert b.pic_id != second.pk
@@ -211,10 +203,7 @@ def test_administration_roles_and_access_log(farm):
     c.force_login(b)
     assert c.get("/properties/add/").status_code == 403
     c.force_login(a)
-    assert (
-        c.post("/access/", {"account": b.pk, "properties": [other.pk]}).status_code
-        == 302
-    )
+    assert c.post("/access/", {"account": b.pk, "properties": [other.pk]}).status_code == 302
     assert list(b.properties.values_list("pk", flat=True)) == [other.pk]
     assert Audit.objects.filter(action="property_access").count() == 2
 
@@ -225,59 +214,42 @@ def test_transition_deadline_and_malformed_selection(farm):
     c = Client()
     c.force_login(b)
     c.get("/")
-    assert (
-        c.post("/context/select/", {"property": "invalid", "pic": "bad"}).status_code
-        == 400
-    )
+    assert c.post("/context/select/", {"property": "invalid", "pic": "bad"}).status_code == 400
     with patch("time.time", return_value=1000):
         assert (
-            c.post("/context/select/", {"property": p.pk, "pic": second.pk}).json()[
-                "wait_ms"
-            ]
-            == 15000
+            c.post("/context/select/", {"property": p.pk, "pic": second.pk}).json()["wait_ms"]
+            == 5000
         )
         assert c.get("/context/ready/").json()["ready"] is False
-    with patch("time.time", return_value=1014):
+    with patch("time.time", return_value=1004):
         assert c.get("/animals/").status_code == 302
-    with patch("time.time", return_value=1015):
+    with patch("time.time", return_value=1005):
         assert c.get("/context/ready/").json()["ready"] is True
         assert c.get("/animals/").status_code == 200
 
 
-def test_repurchase_to_another_pic_preserves_identity_and_lifetime(farm):
+def test_repurchase_to_another_pic_rejected(farm):
     p, a, b, _ = farm
     second = PIC.objects.create(property=p, number="TEST0002")
     with clock.at(T):
         mob = setup_mob(b, 1)
         animal = Animal.objects.first()
-        original_pic = animal.pic_id
-        run(
-            b,
-            "sale",
-            {"mob": mob, "destination_pic": "DST00001", "nvd": "OUT", "price": 200},
-        )
+        run(b, "sale", {"mob": mob, "destination_pic": "DST00001", "nvd": "OUT", "price": 200})
     with clock.at(T + 1):
         b.pic = second
-        run(
-            b,
-            "register",
-            {
-                "entry_source": "repurchase",
-                "nlis": animal.label,
-                "source_pic": "SRC00001",
-                "nvd": "BACK",
-                "purchase_cost": 100,
-            },
-        )
-        animal.refresh_from_db()
-        assert animal.pic_id == second.pk
-        assert animal.presence.count() == 2
-        assert list(
-            animal.presence.order_by("start").values_list("pic_id", flat=True)
-        ) == [original_pic, second.pk]
-        report = reports.build(b, {})
-        assert len(report["rows"]) == 1
-        assert animal.allocations.count() == 3
+        with pytest.raises(ValidationError, match="does not qualify"):
+            run(
+                b,
+                "register",
+                {
+                    "entry_source": "repurchase",
+                    "nlis": animal.label,
+                    "source_pic": "SRC00001",
+                    "nvd": "BACK",
+                },
+            )
+    animal.refresh_from_db()
+    assert animal.status == "exited" and animal.presence.count() == 1
 
 
 def test_mob_retirement_preserves_history_and_can_be_undone(farm):
