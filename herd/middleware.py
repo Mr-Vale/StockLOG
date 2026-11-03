@@ -1,7 +1,9 @@
 import time
+
 from django.core import signing
 from django.core.exceptions import PermissionDenied
 from django.shortcuts import redirect
+
 from .context import properties_for
 from .models import PIC
 
@@ -19,26 +21,19 @@ class AccountBoundaryMiddleware:
             if pair is None and user.property_id and user.pic_id:
                 pair = [user.property_id, user.pic_id]
                 request.session["farm_selection"] = pair
+                request.session["selection_compact"] = True
             user.property = None
             user.pic = None
             if pair:
                 prop = properties_for(user).filter(pk=pair[0]).first()
-                pic = (
-                    PIC.objects.filter(pk=pair[1], property=prop).first()
-                    if prop
-                    else None
-                )
+                pic = PIC.objects.filter(pk=pair[1], property=prop).first() if prop else None
                 if pic:
                     user.property, user.pic = prop, pic
-                    generation = request.session.setdefault(
-                        "farm_generation", "initial"
+                    generation = request.session.setdefault("farm_generation", "initial")
+                    request.farm_context = signing.Signer(salt="farm-context").sign_object(
+                        [prop.pk, pic.pk, generation]
                     )
-                    request.farm_context = signing.Signer(
-                        salt="farm-context"
-                    ).sign_object([prop.pk, pic.pk, generation])
-                    request.context_ready = time.time() >= request.session.get(
-                        "farm_ready_at", 0
-                    )
+                    request.context_ready = time.time() >= request.session.get("farm_ready_at", 0)
             name = request.path
             exempt = (
                 name
@@ -64,9 +59,15 @@ class AccountBoundaryMiddleware:
                     request.method == "POST"
                     and request.POST.get("farm_context") != request.farm_context
                 ):
-                    raise PermissionDenied(
-                        "Property or PIC changed. Reload and review this form before submitting."
-                    )
+                    # The entry renderer may display a signed stale list, but it
+                    # refuses every mutation except an explicit restart.
+                    if not (
+                        name in {"/workflow/entry/", "/action/register/"}
+                        and request.POST.get("review_state")
+                    ):
+                        raise PermissionDenied(
+                            "Property or PIC changed. Reload and review this form before submitting."
+                        )
         response = self.get_response(request)
         if not request.path.startswith("/static/"):
             response["Cache-Control"] = "no-store"

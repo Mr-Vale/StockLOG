@@ -12,7 +12,7 @@ Coverage includes:
 - Full independent overlapping-cohort acceptance scenario, PDF/XLSX arithmetic and historical correction reconciliation.
 - Encrypted backup rotation/failure handling and restoration into a separate empty database. Restored values are compared for accounts, property access grants, PICs, presence cycles, cattle, inventory, events, allocations, audit and shared templates.
 - First-admin creation without a property; atomic property/PIC creation; property grants/revocation; wrong-PIC/cross-property rejection and shared property inventory.
-- Saved defaults, stale forms and signed confirmations, a controlled server/client 15-second transition, chart boundaries/preferences and mob retirement/undo.
+- Saved defaults, stale forms and signed confirmations, a controlled server/client transition (originally 15 seconds; now 5 seconds, see CATTLE_ENTRY_RESULTS.md), chart boundaries/preferences and mob retirement/undo.
 - Four Chromium tests covering login, mobile registration, exports, offline loss/retry recovery, account separation, context selection, a controlled client timer and desktop/mobile layout without horizontal overflow.
 
 Raw CI test lines: [47-test output](property-pic-ci.txt).

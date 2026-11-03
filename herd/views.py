@@ -94,6 +94,9 @@ def dashboard(request):
 
 @login_required
 def action(request, operation):
+    if operation == "register":
+        from .entry import entry
+        return entry(request)
     if operation not in FIELDS:
         raise Http404
     if operation in ["account", "purge", "identifier_review"]:
@@ -213,18 +216,8 @@ def action(request, operation):
 
 @login_required
 def animals(request):
-    definition = {
-        "dataset": "animals",
-        "filters": {
-            "status": "active",
-            **({"animal": request.GET["q"]} if request.GET.get("q") else {}),
-        },
-    }
-    return render(
-        request,
-        "herd/animals.html",
-        {"report": reports.build(request.user, definition)},
-    )
+    from .active import active_table
+    return render(request, "herd/animals.html", active_table(request))
 
 
 @login_required
@@ -476,7 +469,7 @@ def accounts(request):
     return render(
         request,
         "herd/accounts.html",
-        {"accounts": Account.objects.all()},
+        {"accounts": Account.objects.all(), "properties": properties_for(request.user).prefetch_related("pics")},
     )
 
 
