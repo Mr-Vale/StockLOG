@@ -15,8 +15,8 @@ from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
-from . import clock, reports, services, home
-from .context import scope, properties_for
+from . import clock, home, reports, services
+from .context import properties_for, scope
 from .forms import FIELDS, ActionForm
 from .models import (
     Account,
@@ -501,7 +501,9 @@ def settings_view(request):
             messages.success(request, "Display settings saved.")
         except (KeyError, ValueError):
             form.add_error("display_timezone", "Choose a valid IANA timezone.")
-    return render(request, "herd/settings.html", {"form": form})
+    from stocklog.version import identity
+
+    return render(request, "herd/settings.html", {"form": form, "release": identity()})
 
 
 @login_required
@@ -527,7 +529,9 @@ def health(request):
     with connection.cursor() as c:
         c.execute("SELECT 1")
         c.fetchone()
-    return JsonResponse({"status": "ok"})
+    from stocklog.version import identity
+
+    return JsonResponse({"status": "ok", **identity()})
 
 
 def recovery_worker(request):

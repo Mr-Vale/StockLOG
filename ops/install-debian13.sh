@@ -13,6 +13,20 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown option: $1" >&2; exit 2 ;;
   esac
 done
+# Production entry point receives a validated tagged release from bootstrap.
+python3 - "$SOURCE" <<'PYVERSION'
+import json, sys
+from pathlib import Path
+root = Path(sys.argv[1])
+sys.path.insert(0, str(root / 'ops'))
+from release import version
+record = json.loads((root / 'release.json').read_text())
+actual = json.loads((root / 'stocklog/version.json').read_text())['version']
+version(actual)
+assert record['version'] == actual and record['tag'] == 'v' + actual
+assert __import__('re').fullmatch('[0-9a-f]{40}', record['commit'])
+print(f"Preparing Version {actual} ({record['commit']})")
+PYVERSION
 if [[ -e /etc/stocklog/install-complete || -L /opt/stocklog/current ]]; then
   echo 'An installation already exists. This fresh-install command will not replace it. See the update/restore documentation.' >&2
   exit 1
@@ -35,7 +49,7 @@ fi
 # Do not install SSH/firewall rules, create swap, alter root logins, or change OS release.
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y --no-install-recommends python3 python3-venv python3-dev build-essential pkg-config default-libmysqlclient-dev mariadb-server mariadb-client ca-certificates curl gnupg debian-archive-keyring caddy fonts-dejavu-core age logrotate systemd openssh-client openssh-server tar gzip
+apt-get install -y --no-install-recommends python3 python3-venv python3-dev build-essential pkg-config default-libmysqlclient-dev mariadb-server mariadb-client ca-certificates git curl gnupg debian-archive-keyring caddy fonts-dejavu-core age logrotate systemd openssh-client openssh-server tar gzip
 python3 -c 'import sys; assert sys.version_info[:2] == (3,13), "Debian Python 3.13 is required"'
 if [[ $(df --output=avail -B1 /var/lib | tail -n1) -lt 1073741824 ]]; then echo 'Need at least 1 GiB free before installation.' >&2; exit 1; fi
 getent group stocklog >/dev/null || groupadd --system stocklog
@@ -90,7 +104,7 @@ print(f"GRANT SELECT,INSERT,UPDATE,DELETE ON `{n}`.* TO '{u}'@'localhost';")
 print(f"CREATE USER IF NOT EXISTS 'stocklog_backup'@'localhost' IDENTIFIED BY '{b}';")
 print(f"GRANT SELECT,SHOW VIEW,TRIGGER ON `{n}`.* TO 'stocklog_backup'@'localhost';")
 PY
-RELEASE=$(sha256sum "$SOURCE/requirements.lock" | cut -c1-12)-$(find "$SOURCE/stocklog" "$SOURCE/herd" "$SOURCE/ops" -type f ! -path '*/__pycache__/*' ! -name '*.pyc' -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -c1-12)
+RELEASE=$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); print(r["version"]+"-"+r["commit"])' "$SOURCE/release.json")
 DEST=/opt/stocklog/releases/$RELEASE
 if [[ ! -d $DEST ]]; then
   install -d -m 0755 "$DEST"
@@ -225,7 +239,7 @@ if [[ $NO_START == 0 ]]; then
   systemctl restart mariadb stocklog caddy
   systemctl start stocklog-backup.timer
 fi
-printf 'Installed release %s. No account password was generated or printed.\n' "$RELEASE"
+printf 'Prepared release %s. No account password was generated or printed.\n' "$RELEASE"
 printf 'Log in at https://%s/ to create your first property and PIC.\n' "$DOMAIN"
 if [[ $NO_START == 0 ]]; then
   echo 'Checking application and HTTPS (DNS must resolve to this server; inbound TCP 80/443 must be reachable).'
@@ -239,7 +253,13 @@ if [[ $NO_START == 0 ]]; then
     exit 1
   fi
   touch /etc/stocklog/install-complete
-  echo 'Installation and HTTPS health checks passed.'
+  python3 - "$DEST/release.json" <<'PYRECORD'
+import json, os, sys
+from pathlib import Path
+p=Path(sys.argv[1]); r=json.loads(p.read_text()); r['health']='healthy'
+tmp=p.with_suffix('.tmp'); tmp.write_text(json.dumps(r)+'\n'); tmp.chmod(0o644); os.replace(tmp,p)
+print(f"Installed Version {r['version']} ({r['commit']}); application and HTTPS health checks passed.")
+PYRECORD
 fi
 printf 'Copy /etc/stocklog/recovery.key to protected OFF-SERVER storage before relying on encrypted backups.\n'
 printf 'Verify DNS/HTTPS, first sign-in, backup and isolated restore before operational use.\n'

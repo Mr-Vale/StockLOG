@@ -7,12 +7,10 @@ source /etc/os-release
 [[ $ID == debian && $VERSION_ID == 13 ]] || { echo 'Debian 13 is required.' >&2; exit 1; }
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y --no-install-recommends ca-certificates git
-REF=${1:-main}
-INSTALL_SOURCE=$(mktemp -d /root/stocklog-source.XXXXXXXX)
+apt-get install -y --no-install-recommends ca-certificates git python3
+[[ $# == 0 ]] || { echo 'Only the latest published stable release can be installed.' >&2; exit 2; }
+INSTALL_SOURCE=$(mktemp -d /tmp/stocklog-source.XXXXXXXX)
 trap 'rm -rf -- "$INSTALL_SOURCE"' EXIT
-git clone --quiet https://github.com/Mr-Vale/StockLOG.git "$INSTALL_SOURCE"
-INSTALL_REVISION=$(git -C "$INSTALL_SOURCE" rev-parse --verify "$REF^{commit}" 2>/dev/null || git -C "$INSTALL_SOURCE" rev-parse --verify "refs/remotes/origin/$REF^{commit}")
-git -C "$INSTALL_SOURCE" checkout --quiet --detach "$INSTALL_REVISION"
-printf 'Installing StockLOG revision %s\n' "$(git -C "$INSTALL_SOURCE" rev-parse HEAD)"
-bash "$INSTALL_SOURCE/ops/install-debian13.sh" </dev/tty
+# Bootstrap resolver comes from this script's reviewed checkout/download directory.
+python3 "$(dirname -- "${BASH_SOURCE[0]}")/release.py" "$INSTALL_SOURCE/source"
+bash "$INSTALL_SOURCE/source/ops/install-debian13.sh" </dev/tty

@@ -257,3 +257,13 @@ def test_inventory_cost_units_pdf_and_grouped_compensation_reports(farm):
             .load_workbook(io.BytesIO(reports.xlsx(grouped)))
             .sheetnames
         )
+
+
+@pytest.mark.django_db
+def test_settings_and_health_show_authoritative_version(farm):
+    from stocklog.version import VERSION
+    client = Client()
+    client.force_login(farm[1])
+    response = client.get('/settings/')
+    assert f'Version {VERSION}' in response.content.decode()
+    assert client.get('/health/').json()['version'] == VERSION
