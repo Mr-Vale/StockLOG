@@ -8,13 +8,13 @@ Run in a root terminal on a blank Debian 13 server:
 apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && installer=$(mktemp /tmp/stocklog-install.XXXXXXXX) && curl --fail --show-error --location https://raw.githubusercontent.com/Mr-Vale/StockLOG/main/ops/bootstrap-install.sh --output "$installer" && bash "$installer"
 ```
 
-For an existing **versioned** installation, paste:
+In a root terminal on an existing **versioned** installation, paste:
 
 ```sh
-updater=$(mktemp /tmp/stocklog-update.XXXXXXXX) && curl --fail --show-error --location https://raw.githubusercontent.com/Mr-Vale/StockLOG/main/ops/update-debian13.sh --output "$updater" && sudo bash "$updater"
+updater=$(mktemp /tmp/stocklog-update.XXXXXXXX) && curl --fail --show-error --location https://raw.githubusercontent.com/Mr-Vale/StockLOG/main/ops/update-debian13.sh --output "$updater" && bash "$updater"
 ```
 
-Alternatively run `sudo bash /opt/stocklog/current/ops/update-debian13.sh`.
+Alternatively, from the root terminal run `bash /opt/stocklog/current/ops/update-debian13.sh`.
 The downloaded wrapper invokes the installed updater; application code still
 comes only from the resolved stable tag.
 

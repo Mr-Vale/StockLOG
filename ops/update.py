@@ -133,6 +133,14 @@ def backup(root, destination):
     return lock
 
 
+def confirm_update():
+    # A terminal is non-seekable: Python's buffered r+ stream cannot wrap it.
+    with open("/dev/tty", "w") as prompt, open("/dev/tty", "r") as reply:
+        prompt.write("Create a backup and deploy this release? [y/N] ")
+        prompt.flush()
+        return reply.readline().strip().lower() in ("y", "yes")
+
+
 def update():
     if os.geteuid() != 0:
         raise RuntimeError("Run as root")
@@ -173,12 +181,9 @@ def update():
             available.get("body")
             or "Compatible features/fixes; existing data and configuration will be retained."
         )
-        with open("/dev/tty", "r+") as tty:
-            tty.write("Create a backup and deploy this release? [y/N] ")
-            tty.flush()
-            if tty.readline().strip().lower() not in ("y", "yes"):
-                print("Cancelled; no changes made.")
-                return
+        if not confirm_update():
+            print("Cancelled; no changes made.")
+            return
         step, stopped, migrated = "prerequisites", False, False
         dest, backup_lock = None, None
         recovery = BASE / "recovery" / time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())

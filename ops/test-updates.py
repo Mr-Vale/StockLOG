@@ -154,6 +154,14 @@ update.manage(
     "from herd.models import Account,Property,PIC; p=Property.objects.get(name='Update preservation property'); pic=PIC.objects.create(property=p,number='KEEP0001'); a=Account.objects.create_user(username='preserved-user',password='Preserved-User-Password-2026',property=p,pic=pic); a.properties.add(p)",
 )
 services("systemctl", "start", "stocklog")
+# Derive synthetic targets from the installed source, so release bumps do not
+# turn the patch/minor/failure scenarios into no-op downgrade checks.
+major, minor, patch_number = update.version(record["version"])
+patch_target = f"{major}.{minor}.{patch_number + 1}"
+minor_target = f"{major}.{minor + 1}.0"
+health_target = f"{major}.{minor + 1}.1"
+schema_target = f"{major}.{minor + 2}.0"
+major_target = f"{major + 1}.0.0"
 version_counter = [1]
 with (
     patch.object(update, "run", services),
@@ -177,22 +185,22 @@ with (
                 update.update()
         preservation()
 
-    attempt("0.1.0")
+    attempt(record["version"])
     print("PASS already current")
-    attempt("1.0.0", "Complete reinstall required")
+    attempt(major_target, "Complete reinstall required")
     print("PASS major blocked")
     with Path("/var/lock/stocklog-install.lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        attempt("0.1.1", "Another StockLOG")
+        attempt(patch_target, "Another StockLOG")
     print("PASS simultaneous update prevented")
     with patch.object(update, "fetch", side_effect=RuntimeError("download failure")):
-        attempt("0.1.1", "download failure")
+        attempt(patch_target, "download failure")
     print("PASS failed download preserves installation")
-    attempt("0.1.1")
+    attempt(patch_target)
     print("PASS patch update")
     # Pinned recovery timestamp must be unique even during fast tests.
     time.sleep(1.1)
-    attempt("0.2.0")
+    attempt(minor_target)
     print("PASS minor update")
     before = (BASE / "current").resolve()
     calls = [0]
@@ -205,7 +213,7 @@ with (
 
     time.sleep(1.1)
     with patch.object(update, "health", fail_new_health):
-        attempt("0.2.1", "injected health failure")
+        attempt(health_target, "injected health failure")
     assert (BASE / "current").resolve() == before
     print("PASS failed health restores compatible code; records/config preserved")
     assert len(list((BASE / "recovery").glob("*/backup.json"))) == 3
@@ -222,7 +230,7 @@ with (
         patch.object(update, "fetch", migrated_fixture),
         patch.object(update, "health", side_effect=RuntimeError("schema health failure")),
     ):
-        attempt("0.3.0", "schema health failure")
+        attempt(schema_target, "schema health failure")
     assert (BASE / "current").resolve() != before
     assert not pidfile.exists()
     assert json.loads((BASE / "current/release.json").read_text())["health"] == "failed"

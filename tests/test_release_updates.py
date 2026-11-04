@@ -144,3 +144,34 @@ def test_real_git_fetch_deploys_published_tag_not_newer_main(tmp_path):
     assert (
         json.loads((tmp_path / "deployed/stocklog/version.json").read_text())["version"] == "0.1.0"
     )
+
+
+@pytest.mark.parametrize("answer,accepted", [("y", True), (" YES ", True), ("n", False), ("", False)])
+def test_confirmation_with_nonseekable_terminal(monkeypatch, answer, accepted):
+    import builtins
+    import os
+    import pty
+    import select
+
+    master, slave = pty.openpty()
+    try:
+        terminal = os.ttyname(slave)
+
+        def terminal_open(path, mode):
+            assert path == "/dev/tty"
+            # Do not acquire a controlling terminal when pytest runs as the
+            # session leader in Docker; closing it would send pytest SIGHUP.
+            return builtins.open(
+                terminal, mode, opener=lambda path, flags: os.open(path, flags | os.O_NOCTTY)
+            )
+
+        # Use real terminal streams: StringIO would conceal the r+ seekability bug.
+        monkeypatch.setattr(update, "open", terminal_open, raising=False)
+        os.write(master, (answer + "\n").encode())
+        assert update.confirm_update() is accepted
+        assert select.select([master], [], [], 2)[0], "Confirmation prompt was not written"
+        output = os.read(master, 4096).decode()
+        assert "Create a backup and deploy this release? [y/N] " in output
+    finally:
+        os.close(slave)
+        os.close(master)
