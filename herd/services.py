@@ -2,7 +2,6 @@
 
 import hashlib
 import json
-import re
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation, localcontext
 from zoneinfo import ZoneInfo
@@ -14,6 +13,7 @@ from django.db.models import Q, Sum
 
 from . import clock
 from .context import scope, validate_context
+from .identifiers import validate_identifier
 from .models import (
     Account,
     Allocation,
@@ -194,19 +194,6 @@ def allocate(event, animals, total, category, unknown=False, presence=None):
         )
 
 
-def validate_identifier(kind, value):
-    value = str(value or "").strip().upper()
-    if (
-        kind == "nlis"
-        and len(value) != 16
-        or kind == "rfid"
-        and not re.fullmatch(r"[0-9]{15}", value)
-    ):
-        raise ValidationError(
-            "NLIS must be exactly 16 characters; RFID exactly 15 ASCII digits."
-        )
-    return value
-
 
 def attach(event, animal, kind, value, reason=""):
     value = validate_identifier(kind, value)
@@ -258,6 +245,9 @@ def execute(actor, key, kind, data, expected_version=None):
             raise ValidationError(
                 "Property records changed since preview. Review the updated stock, membership and effects before confirming."
             )
+        if kind in {"sale", "death", "transfer"} and payload.get("exit_date"):
+            from .cattle_services import exit_timestamp
+            payload["effective_at"] = exit_timestamp(actor, payload["exit_date"], payload.get("effective_at"))
         date_rows = payload.get("rows") or [payload]
         entry_dates = (
             [
@@ -349,6 +339,9 @@ def register(actor, event, data):
 
 
 def _register_row(actor, event, row, seen, seen_animals):
+    for key, kind in [("source_pic", "pic"), ("nvd", "nvd"), ("mother_nlis", "mother")]:
+        if row.get(key) and not (key == "source_pic" and row.get("entry_source") == "birth"):
+            row[key] = validate_identifier(kind, row[key])
     nlis, rfid = row.get("nlis", ""), row.get("rfid", "")
     if not (nlis or rfid):
         raise ValidationError("At least one animal identifier is required.")
@@ -500,7 +493,7 @@ def _register_row(actor, event, row, seen, seen_animals):
         .date()
     ):
         raise ValidationError("Birth date cannot be later than arrival.")
-    if row.get("estimated_weeks") not in [None, ""]:
+    if source != "repurchase" and row.get("estimated_weeks") not in [None, ""]:
         weeks = int(row["estimated_weeks"])
         if weeks < 0:
             raise ValidationError("Age cannot be negative.")
@@ -702,7 +695,11 @@ def edit_animal(actor, event, data):
             )
     if "estimated_weeks" in changed:
         changed["age_reference"] = a.age_reference
-        a.age_reference = event.effective_at
+        a.age_reference = a.presence.filter(start__lte=event.effective_at).order_by("-start", "-start_order").first().start
+    from .cattle_services import calendar_date
+    visit = a.presence.filter(start__lte=event.effective_at).order_by("-start", "-start_order").first()
+    if a.dob and a.dob > calendar_date(actor, visit.start):
+        raise ValidationError("Date of Birth cannot be later than Farm Entry Date.")
     if data.get("purchase_cost") not in [None, ""]:
         price = number(data["purchase_cost"], nonnegative=True)
         presence = (
@@ -732,8 +729,14 @@ def edit_animal(actor, event, data):
 
 
 def depart(actor, event, data):
-    animals = targets(actor, data, event.effective_at, event.effective_order)
+    from .cattle_services import exit_animals
+    animals = exit_animals(actor, event, data)
+    for key, kind in [("destination_pic", "pic"), ("nvd", "nvd")]:
+        if data.get(key):
+            event.details[key] = validate_identifier(kind, data[key])
     death = event.kind == "death"
+    if data.get("price_mode") not in [None, "", "per_head", "group"]:
+        raise ValidationError("Choose Per Head or Group Total.")
     if death and not data.get("reason"):
         raise ValidationError("Death reason is required.")
     if not death and (
@@ -793,9 +796,13 @@ def depart(actor, event, data):
     price = Decimal(0) if death else number(data["price"], nonnegative=True)
     total = price if data.get("price_mode") == "group" else price * len(animals)
     event.before = {"departures": before}
-    allocate(event, animals, total, "sale")
+    if not death:
+        allocate(event, animals, total, "sale")
+    else:
+        participants(event, animals)
     return {
         "count": len(animals),
+        "animals": [str(a.pk) for a in animals],
         "revenue": total,
         "restriction_acceptance": restrictions,
     }
@@ -1257,6 +1264,7 @@ def reverse(actor, event, data):
         "death",
         "replace_tag",
         "edit_animal",
+        "bulk_edit",
         "observation",
     ]
     if original.kind == "mob" and original.details.get("retired_mob"):
@@ -1276,6 +1284,7 @@ def reverse(actor, event, data):
         "death",
         "replace_tag",
         "edit_animal",
+        "bulk_edit",
         "procedure",
         "treat",
     ]:
@@ -1309,11 +1318,14 @@ def reverse(actor, event, data):
             animal=allocation.animal,
             category=allocation.category,
             amount=-allocation.amount,
-            unknown=allocation.unknown,
+            unknown=False,
             presence=allocation.presence,
         )
     participants(event, affected_animals)
-    for change in AttributeChange.objects.filter(event=original):
+    if original.before.get("animal_corrections"):
+        from .cattle_services import reverse_corrections
+        reverse_corrections(actor, event, original)
+    for change in AttributeChange.objects.filter(event=original) if not original.before.get("animal_corrections") else []:
         a = change.animal
         setattr(a, change.field, change.before)
         a.save(update_fields=[change.field])
@@ -1339,8 +1351,8 @@ def reverse(actor, event, data):
             current=False, retired_at=event.effective_at
         )
         for old in original.before["identifiers"]:
-            attach(event, a, old["kind"], old["value"], "Reversal: " + data["reason"])
-    if original.kind == "edit_animal":
+            a.identifiers.filter(kind=old["kind"], value=old["value"]).update(current=True, retired_at=None)
+    if original.kind in {"edit_animal", "bulk_edit"}:
         Allocation.objects.filter(resolved_by=original).update(resolved_by=None)
     if original.kind == "retire":
         Inventory.objects.filter(
@@ -1553,3 +1565,23 @@ def identifier_review(actor, event, data):
 
 
 HANDLERS["identifier_review"] = identifier_review
+
+
+def edit_cattle(actor, event, data):
+    from .cattle_services import edit
+    if "update_fields" not in data and not (set(data) & {"entry_date", "nlis", "rfid", "source_pic", "nvd", "mother_nlis", "vendor_name", "vendor_address", "mob"}):
+        return edit_animal(actor, event, data)
+    return edit(actor, event, data)
+
+
+def bulk_cattle(actor, event, data):
+    from .cattle_services import bulk_edit
+    return bulk_edit(actor, event, data)
+
+
+def transfer_cattle(actor, event, data):
+    from .cattle_services import transfer
+    return transfer(actor, event, data)
+
+
+HANDLERS.update(edit_animal=edit_cattle, bulk_edit=bulk_cattle, transfer=transfer_cattle)

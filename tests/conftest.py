@@ -11,7 +11,7 @@ def farm(db):
         owner="Synthetic owner",
         timezone="Australia/Melbourne",
     )
-    pic = PIC.objects.create(property=p, number="TEST0001")
+    pic = PIC.objects.create(property=p, number="0TEST001")
     admin = Account.objects.create_user(
         username="A",
         password="Synthetic-Test-Password-2026",

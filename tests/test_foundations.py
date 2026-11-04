@@ -14,14 +14,14 @@ def run(user, kind, data, key=None):
     return s.execute(user, key or uuid.uuid4().hex, kind, data)
 
 
-def arrival(user, tag="A" * 16, **extra):
+def arrival(user, tag="0TEST000AAA00000", **extra):
     return run(
         user,
         "register",
         {
             "nlis": tag,
-            "source_pic": "SRC00001",
-            "nvd": "00001",
+            "source_pic": "0FROM001",
+            "nvd": "00000001",
             "purchase_cost": "100",
             "sex": "M",
             **extra,
@@ -62,9 +62,9 @@ def test_idempotency_and_atomicity(farm):
     _, a, b, c = farm
     with clock.at(1600000000):
         data = {
-            "nlis": "A" * 16,
-            "source_pic": "SRC",
-            "nvd": "NVD",
+            "nlis": "0TEST000AAA00000",
+            "source_pic": "0FROM001",
+            "nvd": "00000001",
             "purchase_cost": "100",
         }
         first = run(b, "register", data, "stable")
@@ -79,8 +79,8 @@ def test_idempotency_and_atomicity(farm):
                 "register",
                 {
                     "rows": [
-                        {"nlis": "B" * 16, "source_pic": "SRC", "nvd": "NVD"},
-                        {"nlis": "A" * 16, "source_pic": "SRC", "nvd": "NVD"},
+                        {"nlis": "0TEST000BBB00000", "source_pic": "0FROM001", "nvd": "00000001"},
+                        {"nlis": "0TEST000AAA00000", "source_pic": "0FROM001", "nvd": "00000001"},
                     ]
                 },
             )
@@ -90,7 +90,7 @@ def test_idempotency_and_atomicity(farm):
 @pytest.mark.django_db
 def test_preview_rolls_back_and_stale_confirmation(farm):
     p, a, b, c = farm
-    data = {"nlis": "A" * 16, "source_pic": "SRC", "nvd": "NVD"}
+    data = {"nlis": "0TEST000AAA00000", "source_pic": "0FROM001", "nvd": "00000001"}
     preview = s.preview(b, "register", data)
     assert not Animal.objects.exists()
     run(c, "mob", {"name": "Changed"})

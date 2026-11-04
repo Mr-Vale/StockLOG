@@ -22,7 +22,7 @@ def call(u, kind, data):
 
 
 def tag(cohort, n):
-    return f"TEST{cohort}{n:011d}"
+    return f"0TEST000{cohort}BC{n:05d}"
 
 
 def timestamp(start, day, hour, minute=0):
@@ -63,8 +63,8 @@ def test_complete_overlapping_cohorts(farm):
                 {
                     "nlis": tag(st["label"], n),
                     "rfid": f"{(0 if st['label'] == 'A' else 100) + n:015d}",
-                    "source_pic": "SRC00001",
-                    "nvd": "TEST-NVD-IN",
+                    "source_pic": "0FROM001",
+                    "nvd": "00000001",
                     "purchase_cost": "100",
                     "breed": "Angus",
                     "sex": "M" if n <= st["males"] else "F",
@@ -272,8 +272,8 @@ def test_complete_overlapping_cohorts(farm):
                 "sale",
                 {
                     "mob": st["mob"],
-                    "destination_pic": "DST00001",
-                    "nvd": "TEST-NVD-OUT",
+                    "destination_pic": "0DEST001",
+                    "nvd": "00000001",
                     "price": "2000",
                     "price_mode": "per_head",
                 },

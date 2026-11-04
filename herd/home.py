@@ -10,24 +10,27 @@ from zoneinfo import ZoneInfo
 from django import forms
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.db import transaction, IntegrityError
-from django.http import JsonResponse
-from django.shortcuts import render, redirect, get_object_or_404
-from django.views.decorators.http import require_POST
 from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_POST
+
 from . import clock, services
 from .context import properties_for, scope
-from .models import Property, PIC, Account, Animal, Mob, Audit
+from .identifiers import configure
+from .models import PIC, Account, Animal, Audit, Mob, Property
 
 
 def pic_number(value):
-    value = value.strip().upper()
-    if len(value) != 8 or not value.isascii() or not value.isalnum():
-        raise ValidationError("Enter an eight-character PIC using letters and numbers.")
-    return value
+    return services.validate_identifier("pic", value)
 
 
 class PropertyForm(forms.Form):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        configure(self.fields["number"], "pic")
+
     name = forms.CharField(max_length=160, label="Property name")
     address = forms.CharField(widget=forms.Textarea, label="Property address")
     owner = forms.CharField(max_length=160)
@@ -41,6 +44,10 @@ class PropertyForm(forms.Form):
 
 
 class PICForm(forms.Form):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        configure(self.fields["number"], "pic")
+
     property = forms.ModelChoiceField(queryset=Property.objects.all())
     number = forms.CharField(max_length=8, label="PIC number")
 
@@ -289,6 +296,9 @@ def workflow(request, group):
         from django.http import Http404
 
         raise Http404
+    if group == "exit":
+        from .cattle import workflow
+        return workflow(request, "sale")
     if group == "entry":
         from .entry import entry
         return entry(request)

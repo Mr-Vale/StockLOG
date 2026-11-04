@@ -79,7 +79,7 @@ def test_concurrent_same_submission_returns_same_event(farm):
                     user,
                     "same-request",
                     "register",
-                    {"nlis": "Z" * 16, "source_pic": "SRC", "nvd": "NVD"},
+                    {"nlis": "0TEST000ZZZ00000", "source_pic": "0FROM001", "nvd": "00000001"},
                 )
             ids.append(r["event"])
         finally:
@@ -114,7 +114,7 @@ def test_concurrent_entries_cannot_duplicate_identity_or_occupancy(farm):
                     user,
                     uuid.uuid4().hex,
                     "register",
-                    {"nlis": "CONCURRENT000001", "source_pic": "SRC", "nvd": "N"},
+                    {"nlis": "0TEST000CON00001", "source_pic": "0FROM001", "nvd": "00000001"},
                 )
             outcomes.append("saved")
         except (ValidationError, IntegrityError):
@@ -130,3 +130,52 @@ def test_concurrent_entries_cannot_duplicate_identity_or_occupancy(farm):
         assert not t.is_alive()
     assert sorted(outcomes) == ["rejected", "saved"]
     assert Animal.objects.count() == 1 and Presence.objects.filter(end__isnull=True).count() == 1
+
+
+@pytest.mark.django_db(transaction=True)
+def test_two_sessions_cannot_replace_a_just_populated_identifier(farm):
+    from django.core.exceptions import PermissionDenied
+
+    from .test_foundations import arrival
+
+    _, admin, b, c = farm
+    with clock.at(T):
+        identity = arrival(b)["animals"][0]
+    label = Animal.objects.get(pk=identity).label
+    barrier = threading.Barrier(2)
+    outcomes = []
+
+    def fill(pk, value):
+        close_old_connections()
+        try:
+            actor = Account.objects.get(pk=pk)
+            barrier.wait(timeout=10)
+            with clock.at(T + 1):
+                s.execute(
+                    actor,
+                    uuid.uuid4().hex,
+                    "edit_animal",
+                    {
+                        "animal": label,
+                        "update_fields": ["rfid"],
+                        "rfid": value,
+                    },
+                )
+            outcomes.append("saved")
+        except PermissionDenied:
+            outcomes.append("denied")
+        finally:
+            connections.close_all()
+
+    threads = [
+        threading.Thread(target=fill, args=(user.pk, f"{n:015}")) for user, n in [(b, 11), (c, 12)]
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=20)
+        assert not thread.is_alive()
+    assert sorted(outcomes) == ["denied", "saved"]
+    assert (
+        Animal.objects.get(pk=identity).identifiers.filter(kind="rfid", current=True).count() == 1
+    )

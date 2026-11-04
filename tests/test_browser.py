@@ -55,9 +55,9 @@ def test_phone_registration_desktop_reports_and_admin_boundaries(farm, live_serv
         sign_in(page, live_server.url)
         assert not page.get_by_role("link", name="Administration", exact=True).count()
         page.goto(live_server.url + "/action/register/")
-        page.locator("[name=nlis]").fill("BROWSER000000001")
-        page.locator("[name=source_pic]").fill("SRC00001")
-        page.locator("[name=nvd]").fill("TEST-NVD")
+        page.locator("[name=nlis]").fill("0TEST000BRO00001")
+        page.locator("[name=source_pic]").fill("0FROM001")
+        page.locator("[name=nvd]").fill("00000001")
         page.locator("[name=purchase_cost]").fill("100")
         page.locator("[name=sex]").select_option("M")
         page.get_by_role("button", name="Add to list").click()
@@ -66,7 +66,7 @@ def test_phone_registration_desktop_reports_and_admin_boundaries(farm, live_serv
         expect(page.get_by_role("heading", name="Saved and confirmed")).to_be_visible()
         assert db_query(lambda: Animal.objects.count()) == 1
         page.goto(live_server.url + "/animals/")
-        expect(page.get_by_role("link", name="BROWSER000000001")).to_be_visible()
+        expect(page.get_by_role("link", name="0TEST000BRO00001")).to_be_visible()
         OUT.mkdir(parents=True, exist_ok=True)
         page.screenshot(path=str(OUT / "phone-animals.png"), full_page=True)
         page.set_viewport_size({"width": 1440, "height": 1000})
@@ -173,14 +173,14 @@ def test_property_homepage_screenshots_and_transition(farm, live_server):
     from herd.models import PIC
 
     p, admin, b, _ = farm
-    second = PIC.objects.create(property=p, number="TEST0002")
+    second = PIC.objects.create(property=p, number="0TEST002")
     from datetime import date, timedelta
     from .test_foundations import arrival, run
 
     first_mob = run(admin, "mob", {"name": "First PIC mob"})["mob"]
     arrival(
         admin,
-        tag="HOME000000000001",
+        tag="0TEST000HOM00001",
         breed="Angus",
         sex="F",
         mob=first_mob,
@@ -199,7 +199,7 @@ def test_property_homepage_screenshots_and_transition(farm, live_server):
     ):
         arrival(
             admin,
-            tag=f"HOME{i:012d}",
+            tag=f"0TEST000HOM{i:05d}",
             breed=breed,
             sex=sex,
             mob=second_mob,

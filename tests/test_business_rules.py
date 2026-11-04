@@ -24,7 +24,7 @@ T = 1600000000
 def setup_mob(user, count=5):
     mob = run(user, "mob", {"name": "Test mob"})["mob"]
     for i in range(count):
-        arrival(user, tag=f"EDGE{i:012d}", mob=mob, rfid=f"{i:015d}")
+        arrival(user, tag=f"0TEST000EDG{i:05d}", mob=mob, rfid=f"{i:015d}")
     return mob
 
 
@@ -51,24 +51,24 @@ def test_tag_lineage_and_reversal_reserves_forever(farm):
             b,
             "replace_tag",
             {
-                "animal": "A" * 16,
-                "nlis": "N" * 16,
+                "animal": "0TEST000AAA00000",
+                "nlis": "0TEST000NNN00000",
                 "rfid": "000000000000099",
                 "reason": "Lost tag",
             },
         )
-        assert s.find_animal(c, "A" * 16).id == animal.id == s.find_animal(c, "N" * 16).id
+        assert s.find_animal(c, "0TEST000AAA00000").id == animal.id == s.find_animal(c, "0TEST000NNN00000").id
         run(b, "reverse", {"original": change["event"], "reason": "Wrong replacement"})
-        assert animal.identifiers.get(value="A" * 16).current
-        assert not animal.identifiers.get(value="N" * 16).current
+        assert animal.identifiers.get(value="0TEST000AAA00000").current
+        assert not animal.identifiers.get(value="0TEST000NNN00000").current
         with pytest.raises(ValidationError):
-            arrival(b, tag="N" * 16)
+            arrival(b, tag="0TEST000NNN00000")
         with pytest.raises(ValidationError):
             run(
                 b,
                 "replace_tag",
                 {
-                    "animal": "A" * 16,
+                    "animal": "0TEST000AAA00000",
                     "rfid": "１２３４５６７８９０１２３４５",
                     "reason": "Test",
                 },
@@ -186,7 +186,7 @@ def test_historical_membership_and_admin_correction(farm):
         item = stock(b)
         other = run(b, "mob", {"name": "Other"})["mob"]
     with clock.at(T + 200):
-        run(b, "move", {"animal": "EDGE000000000000", "destination": other})
+        run(b, "move", {"animal": "0TEST000EDG00000", "destination": other})
     with clock.at(T + 300):
         before = run(
             b,
@@ -216,7 +216,7 @@ def test_historical_membership_and_admin_correction(farm):
                 b,
                 "move",
                 {
-                    "animal": "EDGE000000000001",
+                    "animal": "0TEST000EDG00001",
                     "destination": other,
                     "effective_at": T + 150,
                     "administration": True,
@@ -226,7 +226,7 @@ def test_historical_membership_and_admin_correction(farm):
             a,
             "move",
             {
-                "animal": "EDGE000000000000",
+                "animal": "0TEST000EDG00000",
                 "destination": other,
                 "effective_at": T + 50,
                 "administration": True,
@@ -238,7 +238,7 @@ def test_historical_membership_and_admin_correction(farm):
             uuid.uuid4().hex,
             "move",
             {
-                "animal": "EDGE000000000000",
+                "animal": "0TEST000EDG00000",
                 "destination": other,
                 "effective_at": T + 50,
                 "administration": True,
@@ -255,22 +255,22 @@ def test_sale_death_restriction_repurchase_and_locks(farm):
     with clock.at(T):
         setup_mob(b, 2)
         chemical = stock(b, kind="chemical", restriction_days=28)
-        run(b, "treat", {"animal": "EDGE000000000000", "item": chemical, "dose": 1})
+        run(b, "treat", {"animal": "0TEST000EDG00000", "item": chemical, "dose": 1})
     with clock.at(T + 100):
         data = {
-            "animal": "EDGE000000000000",
-            "destination_pic": "DST",
-            "nvd": "NVD",
+            "animal": "0TEST000EDG00000",
+            "destination_pic": "0DEST001",
+            "nvd": "00000001",
             "price": "2000",
         }
         with pytest.raises(ValidationError):
             run(b, "sale", data)
         sale = run(b, "sale", {**data, "accept_restriction": True})
         with pytest.raises(ValidationError):
-            run(b, "treat", {"animal": "EDGE000000000000", "item": chemical, "dose": 1})
+            run(b, "treat", {"animal": "0TEST000EDG00000", "item": chemical, "dose": 1})
         with pytest.raises(PermissionDenied):
             run(b, "reverse", {"original": sale["event"], "reason": "Not admin"})
-        death = run(b, "death", {"animal": "EDGE000000000001", "reason": "Synthetic"})
+        death = run(b, "death", {"animal": "0TEST000EDG00001", "reason": "Synthetic"})
         with pytest.raises(PermissionDenied):
             run(b, "reverse", {"original": death["event"], "reason": "Not admin"})
         run(
@@ -280,12 +280,12 @@ def test_sale_death_restriction_repurchase_and_locks(farm):
         )
     with clock.at(T + 200):
         repurchase = arrival(
-            b, tag="EDGE000000000000", entry_source="repurchase", purchase_cost="150"
+            b, tag="0TEST000EDG00000", entry_source="repurchase", purchase_cost="150"
         )
-        row = reports.build(b, {"filters": {"animal": "EDGE000000000000"}})["rows"][0]
+        row = reports.build(b, {"filters": {"animal": "0TEST000EDG00000"}})["rows"][0]
         assert row["purchase"] == 250 and row["revenue"] == 2000 and row["status"] == "active"
         assert (
-            s.find_animal(b, "EDGE000000000000").id
+            s.find_animal(b, "0TEST000EDG00000").id
             == Animal.objects.get(pk=repurchase["animals"][0]).id
         )
 
@@ -297,13 +297,13 @@ def test_unknown_cost_birth_missing_data_and_reporting(farm):
         arrival(b, purchase_cost="", sex="", breed="")
         row = reports.build(b, {})["rows"][0]
         assert not row["financial_complete"] and row["profit"] is None and row["age_weeks"] is None
-        run(b, "register", {"nlis": "C" * 16, "entry_source": "birth"})
+        run(b, "register", {"nlis": "0TEST000CCC00000", "entry_source": "birth"})
         run(
             b,
             "register",
-            {"nlis": "B" * 16, "entry_source": "birth", "mother_nlis": "A" * 16},
+            {"nlis": "0TEST000BBB00000", "entry_source": "birth", "mother_nlis": "0TEST000AAA00000"},
         )
-        born = reports.build(b, {"filters": {"animal": "B" * 16}})["rows"][0]
+        born = reports.build(b, {"filters": {"animal": "0TEST000BBB00000"}})["rows"][0]
         assert born["financial_complete"] and born["purchase"] == 0
         mob = run(b, "mob", {"name": "Empty"})["mob"]
         item = stock(b)
@@ -401,18 +401,18 @@ def test_deliberate_retention_cutoff_and_permanent_reservation(farm):
         run(
             b,
             "sale",
-            {"animal": "A" * 16, "destination_pic": "DST", "nvd": "NVD", "price": 200},
+            {"animal": "0TEST000AAA00000", "destination_pic": "0DEST001", "nvd": "00000001", "price": 200},
         )
         with pytest.raises(ValidationError):
-            run(a, "purge", {"animal": "A" * 16, "reason": "Too soon", "confirm": True})
+            run(a, "purge", {"animal": "0TEST000AAA00000", "reason": "Too soon", "confirm": True})
     with clock.at(clock.calendar_days(T + 100, 366 * 11, "Australia/Melbourne")):
         with pytest.raises(PermissionDenied):
-            run(b, "purge", {"animal": "A" * 16, "reason": "Test", "confirm": True})
+            run(b, "purge", {"animal": "0TEST000AAA00000", "reason": "Test", "confirm": True})
         run(
             a,
             "purge",
             {
-                "animal": "A" * 16,
+                "animal": "0TEST000AAA00000",
                 "reason": "Eligible detailed records removed",
                 "confirm": True,
             },
@@ -420,7 +420,7 @@ def test_deliberate_retention_cutoff_and_permanent_reservation(farm):
         assert Animal.objects.get().purged
         with pytest.raises(ValidationError):
             arrival(b)
-        assert Identifier.objects.filter(value="A" * 16).exists()
+        assert Identifier.objects.filter(value="0TEST000AAA00000").exists()
 
 
 @pytest.mark.django_db
@@ -433,7 +433,7 @@ def test_missing_purchase_cost_can_be_completed_without_rewriting_history(farm):
             b,
             "edit_animal",
             {
-                "animal": "A" * 16,
+                "animal": "0TEST000AAA00000",
                 "purchase_cost": "123.45",
                 "breed": "Angus",
                 "estimated_weeks": 1,
@@ -459,20 +459,20 @@ def test_historical_treatment_corrects_quantity_cost_and_restrictions(farm):
             a,
             "move",
             {
-                "animal": "EDGE000000000000",
+                "animal": "0TEST000EDG00000",
                 "destination": other,
                 "effective_at": T + 50,
                 "administration": True,
             },
         )
         assert Inventory.objects.get(pk=item).balance == original_balance + 2
-        removed = s.find_animal(b, "EDGE000000000000")
+        removed = s.find_animal(b, "0TEST000EDG00000")
         assert not removed.restrictions.filter(superseded_by__isnull=True).exists()
         assert (
             sum(removed.allocations.filter(category="chemical").values_list("amount", flat=True))
             == 0
         )
-        kept = s.find_animal(b, "EDGE000000000001")
+        kept = s.find_animal(b, "0TEST000EDG00001")
         assert (
             sum(kept.allocations.filter(category="chemical").values_list("amount", flat=True)) == -1
         )
@@ -517,10 +517,10 @@ def test_receipt_reversal_refuses_later_consumption_conflict(farm):
 def test_admin_identifier_review_never_merges_or_releases_reservations(farm):
     _, a, b, c = farm
     with clock.at(T):
-        arrival(b, tag="A" * 16, rfid="000000000000001")
-        arrival(b, tag="B" * 16, rfid="000000000000002")
+        arrival(b, tag="0TEST000AAA00000", rfid="000000000000001")
+        arrival(b, tag="0TEST000BBB00000", rfid="000000000000002")
         data = {
-            "animal": "A" * 16,
+            "animal": "0TEST000AAA00000",
             "identifier_kind": "rfid",
             "identifier_value": "000000000000002",
             "resolution": "reject_conflicting_link",
@@ -530,7 +530,7 @@ def test_admin_identifier_review_never_merges_or_releases_reservations(farm):
             run(b, "identifier_review", data)
         result = run(a, "identifier_review", data)
         assert not result["reservation_transferred"] and Animal.objects.count() == 2
-        assert s.find_animal(b, "000000000000002").label == "B" * 16
+        assert s.find_animal(b, "000000000000002").label == "0TEST000BBB00000"
 
 
 @pytest.mark.django_db
@@ -542,7 +542,7 @@ def test_repurchase_resets_retention_eligibility(farm):
         run(
             b,
             "sale",
-            {"animal": "A" * 16, "destination_pic": "DST", "nvd": "NVD", "price": 200},
+            {"animal": "0TEST000AAA00000", "destination_pic": "0DEST001", "nvd": "00000001", "price": 200},
         )
     later = clock.calendar_days(T, 366 * 11, "Australia/Melbourne")
     with clock.at(later):
@@ -551,16 +551,16 @@ def test_repurchase_resets_retention_eligibility(farm):
             run(
                 a,
                 "purge",
-                {"animal": "A" * 16, "reason": "Repurchased", "confirm": True},
+                {"animal": "0TEST000AAA00000", "reason": "Repurchased", "confirm": True},
             )
     with clock.at(later + 100):
         run(
             b,
             "sale",
             {
-                "animal": "A" * 16,
-                "destination_pic": "DST",
-                "nvd": "NEW NVD",
+                "animal": "0TEST000AAA00000",
+                "destination_pic": "0DEST001",
+                "nvd": "00000001",
                 "price": 250,
             },
         )
@@ -569,7 +569,7 @@ def test_repurchase_resets_retention_eligibility(farm):
                 a,
                 "purge",
                 {
-                    "animal": "A" * 16,
+                    "animal": "0TEST000AAA00000",
                     "reason": "Latest exit is recent",
                     "confirm": True,
                 },
@@ -582,15 +582,15 @@ def test_exited_attribute_and_tag_locks_cannot_be_bypassed_with_backdating(farm)
     with clock.at(T):
         arrival(b)
     with clock.at(T + 10):
-        run(b, "sale", {"animal": "A" * 16, "destination_pic": "DST", "nvd": "NVD", "price": 200})
+        run(b, "sale", {"animal": "0TEST000AAA00000", "destination_pic": "0DEST001", "nvd": "00000001", "price": 200})
     with clock.at(T + 20):
         with pytest.raises(PermissionDenied):
-            run(b, "edit_animal", {"animal": "A" * 16, "breed": "Changed", "effective_at": T + 1})
+            run(b, "edit_animal", {"animal": "0TEST000AAA00000", "breed": "Changed", "effective_at": T + 1})
         with pytest.raises(PermissionDenied):
             run(
                 b,
                 "replace_tag",
-                {"animal": "A" * 16, "nlis": "N" * 16, "reason": "Locked", "effective_at": T + 1},
+                {"animal": "0TEST000AAA00000", "nlis": "0TEST000NNN00000", "reason": "Locked", "effective_at": T + 1},
             )
 
 
@@ -600,7 +600,7 @@ def test_historical_purchase_correction_is_scoped_to_its_presence_cycle(farm):
     with clock.at(T):
         arrival(b, purchase_cost="")
     with clock.at(T + 100):
-        run(b, "sale", {"animal": "A" * 16, "destination_pic": "DST", "nvd": "FIRST", "price": 200})
+        run(b, "sale", {"animal": "0TEST000AAA00000", "destination_pic": "0DEST001", "nvd": "00000001", "price": 200})
     with clock.at(T + 200):
         arrival(b, entry_source="repurchase", purchase_cost=150)
     with clock.at(T + 300):
@@ -608,7 +608,7 @@ def test_historical_purchase_correction_is_scoped_to_its_presence_cycle(farm):
             a,
             "edit_animal",
             {
-                "animal": "A" * 16,
+                "animal": "0TEST000AAA00000",
                 "effective_at": T + 50,
                 "purchase_cost": "100",
                 "reason": "Resolve the first purchase, retaining repurchase cost",
@@ -627,13 +627,13 @@ def test_tied_second_membership_presence_and_repurchase_order(farm):
         other = run(b, "mob", {"name": "Second-order mob"})["mob"]
         feeding = run(b, "feed", {"mob": mob, "item": item, "quantity": 1, "mode": "bales"})
         feed_event = Event.objects.get(pk=feeding["event"])
-        animal = s.find_animal(b, "EDGE000000000000")
+        animal = s.find_animal(b, "0TEST000EDG00000")
         run(b, "move", {"animal": animal.label, "destination": other})
         assert [x.id for x in s.members(b, mob, T, feed_event.effective_order)] == [animal.id]
         run(
             b,
             "sale",
-            {"animal": animal.label, "destination_pic": "DST", "nvd": "NVD", "price": 200},
+            {"animal": animal.label, "destination_pic": "0DEST001", "nvd": "00000001", "price": 200},
         )
         assert s.present(animal, T, feed_event.effective_order) and not s.present(animal, T)
         arrival(b, tag=animal.label, entry_source="repurchase", purchase_cost=50)

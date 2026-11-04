@@ -94,6 +94,9 @@ def dashboard(request):
 
 @login_required
 def action(request, operation):
+    if operation in {"sale", "transfer", "death", "edit_animal", "bulk_edit"}:
+        from .cattle import workflow
+        return workflow(request, operation)
     if operation == "register":
         from .entry import entry
         return entry(request)

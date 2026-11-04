@@ -47,9 +47,9 @@ def test_entry_modes_review_and_responsive_navigation(farm, live_server):
         assert db_query(lambda: Animal.objects.count()) == 0
         page.get_by_role("button", name="Purchase", exact=True).click()
         expect(page.get_by_role("heading", name="Review animals (1)")).to_be_visible()
-        page.locator("[name=nlis]").fill("0000000000000002")
-        page.locator("[name=source_pic]").fill("SRC00001")
-        page.locator("[name=nvd]").fill("NVD-EXAMPLE")
+        page.locator("[name=nlis]").fill("0TEST000ABC00002")
+        page.locator("[name=source_pic]").fill("0FROM001")
+        page.locator("[name=nvd]").fill("00000001")
         page.get_by_role("button", name="Add to list", exact=True).click()
         expect(page.get_by_role("heading", name="Review animals (2)")).to_be_visible()
         page.screenshot(path=str(OUT / "mobile-review.png"), full_page=True)
