@@ -37,3 +37,7 @@ The suite exercises the complete overlapping April/August synthetic fixture and 
 Legacy archive branch: `archive/legacy-desktop-2026-10-23`, exact commit `cf1c9c0244462d39a398875c7f8f228fde4a3deb`. Development branch: `rebuild/web-replacement`. Preserve the archive and all history; review through a draft pull request, never merge automatically. The original desktop source remains retrievable from the archive.
 
 Preparation documents under `docs/rebuild/` are historical design records. Current implementation status and verification are in the linked operational/test documents; old unchecked preparation-stage boxes are not current status. The owner authorised replacement implementation, but **has not authorised connecting to or modifying the real VPS, NAS or live data**. All reported installation tests must identify their isolated environment and distinguish systemd boot/public certificate checks from static/service checks.
+
+## Versioned releases
+
+See [install, one-line update, version policy and recovery](docs/operations/UPDATES.md).

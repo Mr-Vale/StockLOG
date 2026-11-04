@@ -4,11 +4,20 @@ set -euo pipefail
 INSTALLER_SOURCE=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 INSTALLER_CONTAINER=stocklog-installer-test-$RANDOM-$RANDOM
 trap 'docker rm -f "$INSTALLER_CONTAINER" >/dev/null 2>&1 || true' EXIT
-docker run -d --name "$INSTALLER_CONTAINER" --memory=2g --cpus=2 -v "$INSTALLER_SOURCE:/src:ro" debian:13 sleep infinity >/dev/null
+docker run -d --name "$INSTALLER_CONTAINER" --memory=2g --cpus=2 -v "$INSTALLER_SOURCE:/src:ro" -v "${STOCKLOG_TEST_CA_BUNDLE:-/etc/ssl/certs/ca-certificates.crt}:/tmp/test-ca.pem:ro" -e PIP_CERT=/tmp/test-ca.pem debian:13 sleep infinity >/dev/null
 docker exec "$INSTALLER_CONTAINER" bash -c 'apt-get update && apt-get install -y --no-install-recommends python3 python3-pexpect'
+# A synthetic tagged-source identity tests the installer without publishing a release.
+docker exec "$INSTALLER_CONTAINER" bash -c 'mkdir /test-source; tar -C /src --exclude=.git --exclude=work --exclude=__pycache__ -cf - . | tar -C /test-source -xf -'
+docker exec -i "$INSTALLER_CONTAINER" python3 - <<'IDENTITY'
+import json
+from pathlib import Path
+p=Path('/test-source')
+v=json.loads((p/'stocklog/version.json').read_text())['version']
+(p/'release.json').write_text(json.dumps(dict(version=v,tag='v'+v,commit='a'*40,health='prepared')))
+IDENTITY
 docker exec -i "$INSTALLER_CONTAINER" python3 - <<'PY'
 import pexpect, sys
-child=pexpect.spawn('bash', ['/src/ops/install-debian13.sh', '--no-start'], encoding='utf-8', timeout=900)
+child=pexpect.spawn('bash', ['/test-source/ops/install-debian13.sh', '--no-start'], encoding='utf-8', timeout=900)
 child.logfile_read=sys.stdout
 child.expect('Public domain name .*: ', timeout=20)
 child.sendline('stocklog.example.test')
@@ -32,7 +41,8 @@ docker exec "$INSTALLER_CONTAINER" runuser -u caddy -- test ! -r /etc/stocklog/a
 docker exec "$INSTALLER_CONTAINER" stocklog-manage check --deploy --fail-level ERROR
 docker exec "$INSTALLER_CONTAINER" stocklog-manage shell -c "from herd.models import Account, Property; a=Account.objects.get(username='installer-test-admin'); assert a.administrator and a.check_password('Disposable-Installer-Check-2026'); assert not Property.objects.exists(); print('Initial administrator and empty property setup verified')"
 # Re-running must stop rather than replace the activated installation or reset credentials.
-if docker exec "$INSTALLER_CONTAINER" bash /src/ops/install-debian13.sh --no-start --domain stocklog.example.test; then
+if docker exec "$INSTALLER_CONTAINER" bash /test-source/ops/install-debian13.sh --no-start --domain stocklog.example.test; then
   echo 'Installer unexpectedly accepted an existing installation.' >&2; exit 1
 fi
+docker exec "$INSTALLER_CONTAINER" bash -c 'set -a; source /etc/stocklog/app.env; set +a; python3 /src/ops/test-updates.py'
 echo 'Debian 13 package/schema/configuration and terminal prompts passed. PID-1 service boot, reboot and public ACME remain unverified.'

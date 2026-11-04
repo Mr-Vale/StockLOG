@@ -7,10 +7,10 @@ This release uses a new property/PIC schema. Install into an empty database only
 On a blank Debian 13 server, log in as root and paste this **single line**. It installs the download prerequisites, downloads the installer to a file, then runs it with terminal input intact.
 
 ```sh
-apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && installer=$(mktemp /root/stocklog-bootstrap.XXXXXXXX) && curl --fail --show-error --location https://raw.githubusercontent.com/Mr-Vale/StockLOG/feature/property-pic-homepage-installer/ops/bootstrap-debian13.sh --output "$installer" && bash "$installer" feature/property-pic-homepage-installer
+apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && installer=$(mktemp /tmp/stocklog-install.XXXXXXXX) && curl --fail --show-error --location https://raw.githubusercontent.com/Mr-Vale/StockLOG/main/ops/bootstrap-install.sh --output "$installer" && bash "$installer"
 ```
 
-This command targets the review branch. After merging, use `main` in both places. Bootstrap clones the repository once and checks out a consistent detached revision; it prints that revision. A reviewed commit SHA can be supplied as its argument instead of the branch name. `ops/bootstrap-debian13.sh` and the documented path are tracked in this release.
+This downloads bootstrap tooling, then resolves the latest published stable GitHub release and installs its matching version tag. It refuses drafts, prereleases and tag/version mismatches. See [versioning, updates and recovery](UPDATES.md) for the update command and release process.
 
 ## Before running
 
@@ -56,6 +56,6 @@ The installer explicitly makes its Caddy configuration files `root:caddy` with m
 
 The installer reports the failed command line and stops. Fix the underlying error, keeping private configuration and the database. Before a current release has been activated, the same installation command can resume preparation and preserves generated credentials; an existing administrator is never reset. Once `/opt/stocklog/current` exists, reruns refuse to replace the installation. This is a fresh-install entry point, not an automatic updater.
 
-If HTTPS is pending after activation, do not reinstall: check DNS A/AAAA, inbound TCP 80/443 and `journalctl -u caddy`, then retry the HTTPS health check. Check `journalctl -u stocklog` for application failures. Any update to a populated installation requires a separately reviewed, backup-first procedure; never apply this fresh schema over old data.
+If HTTPS is pending after activation, do not reinstall: check DNS A/AAAA, inbound TCP 80/443 and `journalctl -u caddy`, then retry the HTTPS health check. Check `journalctl -u stocklog` for application failures. Use the [backup-first updater](UPDATES.md) for compatible versioned installations. Unversioned installations require separate assessment; never apply this fresh schema over old data.
 
 `--no-start` remains an isolated-image option. It does not verify systemd boot, public DNS or ACME. Full Debian installation/reboot verification must be recorded separately from shell syntax and functional application tests; see [upgrade validation](../testing/PROPERTY_PIC_RESULTS.md).

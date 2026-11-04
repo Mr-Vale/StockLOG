@@ -17,10 +17,11 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import connection, transaction
 
+from stocklog.version import VERSION as APPLICATION_VERSION
+
 from .models import Property
 
 SCHEMA_VERSION = 2
-APPLICATION_VERSION = "2.0.0"
 
 
 def migration_fingerprint():
@@ -106,6 +107,8 @@ def source_archive(path):
     with tarfile.open(path, "w:gz") as tar:
         for name in [
             "manage.py",
+            "release.json",
+            "CHANGELOG.md",
             "requirements.in",
             "requirements.lock",
             "requirements-build.lock",
