@@ -42,3 +42,10 @@ GitHub currently has no published releases. End-to-end production release
 selection therefore cannot complete until a reviewed stable tag/release is
 published. Missing releases fail closed. Unit/local-Git tests cover release
 validation, prerelease/draft rejection, tag/version mismatch and exact tag fetch.
+
+## CI dependency correction
+
+The first PR acceptance run passed 92 tests but failed the additional real-Git
+case because the isolated acceptance image did not install Git (`FileNotFoundError:
+git`). The local focused run had Git available. `ops/test-isolated.sh` now installs
+Git explicitly so the complete suite has the same required tools in CI.
