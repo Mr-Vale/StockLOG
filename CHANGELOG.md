@@ -11,3 +11,6 @@ the updater never guesses their version or schema compatibility.
 ## 0.2.1
 
 bulk edits and cattle exit updates
+
+Fix the updater confirmation prompt on non-seekable terminals by opening terminal
+input and output separately.
