@@ -13,6 +13,7 @@ from django.shortcuts import render
 
 from . import clock, services
 from .forms import ActionForm
+from .identifiers import configure
 from .models import Submission
 
 MODES = {"purchase": "Purchase", "birth": "Birth", "repurchase": "Re-Purchase"}
@@ -105,6 +106,9 @@ class EntryForm(ActionForm):
             self.fields["estimated_weeks"] = forms.IntegerField(
                 required=False, min_value=0, label=LABELS["estimated_weeks"]
             )
+        for key, kind in [("nlis", "nlis"), ("rfid", "rfid"), ("source_pic", "pic"), ("nvd", "nvd")]:
+            if key in self.fields:
+                configure(self.fields[key], kind)
         if mode != "birth":
             for k in ["source_pic", "nvd"]:
                 self.fields[k].required = True
@@ -122,10 +126,10 @@ class EntryForm(ActionForm):
         d = forms.Form.clean(self)
         if not d.get("nlis") and not d.get("rfid"):
             self.add_error("nlis", "Supply at least one of NLIS Visual ID or NLIS RFID.")
-        for k in ["nlis", "rfid"]:
-            if d.get(k):
+        for k in ["nlis", "rfid", "source_pic", "nvd", "mother_nlis"]:
+            if d.get(k) and not self.fields[k].disabled:
                 try:
-                    d[k] = services.validate_identifier(k, d[k])
+                    d[k] = services.validate_identifier({"source_pic": "pic", "mother_nlis": "mother"}.get(k, k), d[k])
                 except ValidationError as e:
                     self.add_error(k, e)
         day = d.get("effective_at")

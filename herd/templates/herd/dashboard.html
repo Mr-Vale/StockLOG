@@ -11,12 +11,10 @@
 {% if request.context_ready %}
 <p>Summary: all PICs in {{ user.property.name }}. Activities use <strong>{{ user.pic.number }}</strong>. Inventory is shared across this property.</p>
 <div class="cards">{% for pic in pic_summary %}<article><h2>PIC {{ pic.number }}</h2><p><strong>{{ pic.cattle }}</strong> active cattle</p><p><strong>{{ pic.mobs }}</strong> current mobs</p></article>{% endfor %}</div>
-<p class="helptext">Current mobs include empty mobs; retired mobs are excluded.</p>
 <h2>Record an activity</h2><div class="cards primary-actions"><a href="{% url 'workflow' 'entry' %}">Cattle Entry</a><a href="{% url 'workflow' 'exit' %}">Cattle Exit</a><a href="{% url 'workflow' 'treatment' %}">Cattle Treatment</a><a href="{% url 'workflow' 'feeding' %}">Cattle Feeding</a></div>
 <h2>View and manage data</h2><div class="cards data-actions"><a href="{% url 'animals' %}">Active Cattle</a><a href="{% url 'inventory' %}?kind=feed">Feed Inventory</a><a href="{% url 'inventory' %}?kind=chemical">Chemical Inventory</a><a href="{% url 'mobs' %}">MOBs</a><a href="{% url 'reports' %}">Reports</a></div>
 <form method="post" action="{% url 'charts' %}" class="chart-form">{% csrf_token %}<input type="hidden" name="farm_context" value="{{ request.farm_context }}"><div class="chart-grid">
 {% for chart in charts %}<article class="chart-card"><h2>{{ chart.title }}</h2><label>Display<select name="{{ chart.key }}" data-chart-select="{{ chart.key }}"><option value="pie" {% if chart.display == 'pie' %}selected{% endif %}>Pie</option><option value="bar" {% if chart.display == 'bar' %}selected{% endif %}>Bar</option></select></label><canvas width="320" height="240" data-chart="{{ chart.key }}" role="img" aria-label="{{ chart.title }}; counts listed below"></canvas><ul>{% for row in chart.rows %}<li>{{ row.label }}: {{ row.count }}</li>{% empty %}<li>No active cattle</li>{% endfor %}</ul></article>{% endfor %}</div><button>Save chart preferences</button></form>
-<p class="helptext">Age boundaries are 0–under 3, 3–under 12, 12–under 24, and 24+ calendar months. Unknown ages are shown separately.</p>
 {% endif %}</div>
 {{ property_data|json_script:'property-data' }}{{ charts|default_if_none:''|json_script:'chart-data' }}
 <script src="{% static 'herd/home.js' %}" defer></script>

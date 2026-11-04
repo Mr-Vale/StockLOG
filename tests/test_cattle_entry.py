@@ -23,7 +23,7 @@ def run(actor, data, key=None):
 
 
 def purchase(**kw):
-    return dict(nlis="0000000000000001", source_pic="SRC00001", nvd="NVD", **kw)
+    return dict(nlis="0TEST000ABC00001", source_pic="0FROM001", nvd="00000001", **kw)
 
 
 def client_for(user):
@@ -80,11 +80,11 @@ def test_mode_fields_optional_birth_and_locks(farm):
         assert Allocation.objects.filter(unknown=True).count() == 1
 
 
-@pytest.mark.parametrize("mother", ["A" * 16, "000000000000009"])
+@pytest.mark.parametrize("mother", ["0TEST000AAA00000", "000000000000009"])
 def test_mother_either_identifier_retained(farm, mother):
     _, a, b, _ = farm
     with clock.at(T):
-        run(b, dict(entry_source="birth", nlis="B" * 16, mother_nlis=mother))
+        run(b, dict(entry_source="birth", nlis="0TEST000BBB00000", mother_nlis=mother))
     assert Animal.objects.get().mother_nlis == mother
     source = Event.objects.get().details["birth_sources"][0]
     assert source["mother_identifier_kind"] == ("rfid" if len(mother) == 15 else "nlis")
@@ -114,14 +114,14 @@ def test_date_future_chronology_and_identifier_validation(farm):
     with clock.at(T):
         for row in [
             dict(effective_at="2026-11-05", **purchase()),
-            dict(effective_at="2026-11-04", rfid="１" * 15, source_pic="SRC", nvd="N"),
-            dict(effective_at="2026-11-04", nlis="short", source_pic="SRC", nvd="N"),
+            dict(effective_at="2026-11-04", rfid="１" * 15, source_pic="0FROM001", nvd="00000001"),
+            dict(effective_at="2026-11-04", nlis="short", source_pic="0FROM001", nvd="00000001"),
         ]:
             assert not EntryForm(b, "purchase", row).is_valid()
-        f = EntryForm(b, "birth", dict(effective_at="2026-11-04", nlis="A" * 16, dob="2026-11-05"))
+        f = EntryForm(b, "birth", dict(effective_at="2026-11-04", nlis="0TEST000AAA00000", dob="2026-11-05"))
         assert not f.is_valid()
         with pytest.raises(ValidationError, match="later than arrival"):
-            run(a, dict(entry_source="birth", nlis="A" * 16, dob="2026-11-05"))
+            run(a, dict(entry_source="birth", nlis="0TEST000AAA00000", dob="2026-11-05"))
 
 
 def test_review_edit_remove_modes_atomic_save_and_retry(farm):
@@ -175,12 +175,12 @@ def test_duplicate_batch_rollback_and_reserved_history(farm):
             b,
             "tag",
             "replace_tag",
-            dict(animal="0000000000000001", nlis="0" * 15 + "2", reason="replacement"),
+            dict(animal="0TEST000ABC00001", nlis="0TEST000ABC00002", reason="replacement"),
         )
         with pytest.raises(ValidationError, match="reserved"):
             run(b, purchase())
         with pytest.raises(ValidationError):
-            run(b, dict(nlis="Z" * 16, rfid="000000000000001", source_pic="SRC", nvd="N"))
+            run(b, dict(nlis="0TEST000ZZZ00000", rfid="000000000000001", source_pic="0FROM001", nvd="00000001"))
 
 
 def test_staged_errors_and_context_change_do_not_redirect(farm):
@@ -195,7 +195,7 @@ def test_staged_errors_and_context_change_do_not_redirect(farm):
             dict(farm_context=token, review_state=state, task="save", mode="purchase"),
         )
         assert len(r.context["reviews"]) == 1 and "Row 1" in r.context["error"]
-        second = PIC.objects.create(property=p, number="TEST0002")
+        second = PIC.objects.create(property=p, number="0TEST002")
         with patch("time.time", return_value=1000):
             c.post("/context/select/", dict(property=p.pk, pic=second.pk))
         with patch("time.time", return_value=1005):
@@ -224,14 +224,14 @@ def test_active_columns_sort_ages_restrictions_and_lifetime(farm):
         run(
             b,
             dict(
-                nlis="0" * 15 + "2",
-                source_pic="SRC",
-                nvd="N",
+                nlis="0TEST000ABC00002",
+                source_pic="0FROM001",
+                nvd="00000001",
                 estimated_weeks=26,
                 purchase_cost="100",
             ),
         )
-        run(b, dict(nlis="0" * 15 + "3", source_pic="SRC", nvd="N"))
+        run(b, dict(nlis="0TEST000ABC00003", source_pic="0FROM001", nvd="00000001"))
         animal = Animal.objects.order_by("dob").filter(dob__isnull=False).get()
         event = Event.objects.get(participants__animal=animal, kind="register")
         for days in [30, 5]:
@@ -251,7 +251,7 @@ def test_active_columns_sort_ages_restrictions_and_lifetime(farm):
         assert (
             first["sex"] == "S"
             and first["age_text"] == "3-1"
-            and first["nlis"] == "0000000000000001"
+            and first["nlis"] == "0TEST000ABC00001"
             and first["rfid"] == "000000000000001"
         )
         assert first["safe"] == date(2026, 12, 4)
@@ -265,7 +265,7 @@ def test_active_columns_sort_ages_restrictions_and_lifetime(farm):
 
 def test_retired_foreign_mobs_and_conflicting_links(farm):
     p, a, b, _ = farm
-    second = PIC.objects.create(property=p, number="TEST0002")
+    second = PIC.objects.create(property=p, number="0TEST002")
     foreign = Mob.objects.create(property=p, pic=second, name="Other PIC")
     retired = Mob.objects.create(property=p, pic=b.pic, name="Retired", retired=True)
     with clock.at(T):
@@ -274,7 +274,7 @@ def test_retired_foreign_mobs_and_conflicting_links(farm):
                 run(b, purchase(mob=mob.pk))
         assert Animal.objects.count() == 0
         run(b, purchase())
-        run(b, dict(rfid="000000000000002", source_pic="SRC", nvd="N"))
+        run(b, dict(rfid="000000000000002", source_pic="0FROM001", nvd="00000001"))
         with pytest.raises(ValidationError, match="different animals"):
             run(b, purchase(rfid="000000000000002", entry_source="repurchase"))
 
@@ -294,7 +294,7 @@ def test_repurchase_preserves_descriptions_costs_and_current_tags(farm):
         )
         animal = Animal.objects.get()
         services.execute(
-            b, "retag", "replace_tag", dict(animal=animal.label, nlis="A" * 16, reason="tag")
+            b, "retag", "replace_tag", dict(animal=animal.label, nlis="0TEST000AAA00000", reason="tag")
         )
         services.execute(
             b,
@@ -303,8 +303,8 @@ def test_repurchase_preserves_descriptions_costs_and_current_tags(farm):
             dict(
                 animal=animal.label,
                 animals=[animal.label],
-                destination_pic="DST",
-                nvd="N",
+                destination_pic="0DEST001",
+                nvd="00000001",
                 price="200",
             ),
         )
@@ -314,7 +314,7 @@ def test_repurchase_preserves_descriptions_costs_and_current_tags(farm):
         )  # Historical lookup tag does not become current again.
         animal.refresh_from_db()
         assert (
-            animal.label == "A" * 16 and animal.breed == "Angus" and animal.dob == date(2025, 1, 1)
+            animal.label == "0TEST000AAA00000" and animal.breed == "Angus" and animal.dob == date(2025, 1, 1)
         )
         assert Animal.objects.count() == 1 and animal.presence.count() == 2
         r = RequestFactory().get("/animals/")
@@ -337,13 +337,13 @@ def test_every_active_sort_toggles_and_retains_missing_last(farm, key):
         run(
             b,
             dict(
-                nlis="0" * 15 + "2",
+                nlis="0TEST000ABC00002",
                 purchase_cost="100",
                 breed="Angus",
                 sex="F",
                 dob="2026-01-01",
-                source_pic="SRC",
-                nvd="N",
+                source_pic="0FROM001",
+                nvd="00000001",
                 rfid="000000000000002",
             ),
         )

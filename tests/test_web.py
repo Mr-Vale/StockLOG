@@ -52,7 +52,7 @@ def test_auth_csrf_roles_and_all_workflow_pages(farm):
         "reverse",
         "template",
     ]:
-        assert client.get("/action/" + operation + "/").status_code == 200
+        assert client.get("/action/" + operation + "/").status_code == (302 if operation == "edit_animal" else 200)
     assert (
         client.get("/accounts/").status_code == 403
         and client.get("/action/purge/").status_code == 403
@@ -64,7 +64,7 @@ def test_auth_csrf_roles_and_all_workflow_pages(farm):
 @pytest.mark.django_db
 def test_import_mapping_preview_atomic_selection_and_rejection(farm):
     _, a, b, c = farm
-    raw = b"Visual,RFID,Arrival,PIC,NVD,Price\nZZZZZZZZZZZZZZZZ,000000000000001,2020-09-13T12:00:00,SRC00001,00001,\nZZZZZZZZZZZZZZZZ,000000000000002,2020-09-13T12:00:00,SRC00001,00001,100\n"
+    raw = b"Visual,RFID,Arrival,PIC,NVD,Price\n0TEST000ZZZ00000,000000000000001,2020-09-13T12:00:00,0FROM001,00000001,\n0TEST000ZZZ00000,000000000000002,2020-09-13T12:00:00,0FROM001,00000001,100\n"
     upload = SimpleUploadedFile("synthetic.csv", raw)
     headers, rows = read_upload(upload)
     with clock.at(T + 86400):
@@ -155,8 +155,8 @@ def test_lpa_all_sections_have_explicit_fields_and_exports(farm):
             "sale",
             {
                 "mob": mob,
-                "destination_pic": "DST00001",
-                "nvd": "TEST OUT",
+                "destination_pic": "0DEST001",
+                "nvd": "00000001",
                 "price": 200,
                 "accept_restriction": True,
             },

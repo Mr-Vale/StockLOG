@@ -17,7 +17,7 @@ pytestmark = pytest.mark.django_db
 
 def another_property():
     p = Property.objects.create(name="Timberley", address="Test road", owner="Test owner")
-    return p, PIC.objects.create(property=p, number="TEST0003")
+    return p, PIC.objects.create(property=p, number="0TEST003")
 
 
 def token(client, path="/"):
@@ -43,7 +43,7 @@ def test_no_context_first_admin_and_property_creation():
         "address": "Test address",
         "owner": "Owner",
         "manager": "",
-        "number": "TEST0001",
+        "number": "0TEST001",
     }
     assert client.post("/properties/add/", form).status_code == 302
     assert Property.objects.count() == PIC.objects.count() == 1
@@ -54,7 +54,7 @@ def test_no_context_first_admin_and_property_creation():
 
 def test_selection_saved_default_revocation_and_wrong_pic(farm):
     p, a, b, _ = farm
-    second = PIC.objects.create(property=p, number="TEST0002")
+    second = PIC.objects.create(property=p, number="0TEST002")
     other, other_pic = another_property()
     c = Client()
     c.force_login(b)
@@ -86,7 +86,7 @@ def test_selection_saved_default_revocation_and_wrong_pic(farm):
 def test_shared_inventory_and_isolated_pic_and_property(farm):
     p, a, b, _ = farm
     first = b.pic
-    second = PIC.objects.create(property=p, number="TEST0002")
+    second = PIC.objects.create(property=p, number="0TEST002")
     with clock.at(T):
         mob = setup_mob(b, 1)
         hay = stock(b)
@@ -101,9 +101,9 @@ def test_shared_inventory_and_isolated_pic_and_property(farm):
             b,
             "register",
             {
-                "nlis": "YYYYYYYYYYYYYYYY",
-                "source_pic": "SRC00001",
-                "nvd": "NVD",
+                "nlis": "0TEST000YYY00000",
+                "source_pic": "0FROM001",
+                "nvd": "00000001",
                 "mob": second_mob,
                 "purchase_cost": 100,
             },
@@ -120,7 +120,7 @@ def test_shared_inventory_and_isolated_pic_and_property(farm):
 
 def test_stale_form_rejected_after_pic_switch(farm):
     p, a, b, _ = farm
-    second = PIC.objects.create(property=p, number="TEST0002")
+    second = PIC.objects.create(property=p, number="0TEST002")
     c = Client()
     c.force_login(b)
     old = token(c, "/action/mob/")
@@ -210,7 +210,7 @@ def test_administration_roles_and_access_log(farm):
 
 def test_transition_deadline_and_malformed_selection(farm):
     p, a, b, _ = farm
-    second = PIC.objects.create(property=p, number="TEST0002")
+    second = PIC.objects.create(property=p, number="0TEST002")
     c = Client()
     c.force_login(b)
     c.get("/")
@@ -230,11 +230,11 @@ def test_transition_deadline_and_malformed_selection(farm):
 
 def test_repurchase_to_another_pic_rejected(farm):
     p, a, b, _ = farm
-    second = PIC.objects.create(property=p, number="TEST0002")
+    second = PIC.objects.create(property=p, number="0TEST002")
     with clock.at(T):
         mob = setup_mob(b, 1)
         animal = Animal.objects.first()
-        run(b, "sale", {"mob": mob, "destination_pic": "DST00001", "nvd": "OUT", "price": 200})
+        run(b, "sale", {"mob": mob, "destination_pic": "0DEST001", "nvd": "00000001", "price": 200})
     with clock.at(T + 1):
         b.pic = second
         with pytest.raises(ValidationError, match="does not qualify"):
@@ -244,8 +244,8 @@ def test_repurchase_to_another_pic_rejected(farm):
                 {
                     "entry_source": "repurchase",
                     "nlis": animal.label,
-                    "source_pic": "SRC00001",
-                    "nvd": "BACK",
+                    "source_pic": "0FROM001",
+                    "nvd": "00000001",
                 },
             )
     animal.refresh_from_db()

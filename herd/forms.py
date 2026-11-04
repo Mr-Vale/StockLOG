@@ -2,8 +2,9 @@
 
 from django import forms
 
-from .context import scope
 from .clock import local_timestamp
+from .context import scope
+from .identifiers import configure
 from .models import Account, Inventory, Mob, ReportTemplate
 
 LABELS = {
@@ -311,6 +312,8 @@ class ActionForm(forms.Form):
                         )
                     ),
                 )
+            if key in {"nlis", "rfid", "source_pic", "destination_pic", "nvd"}:
+                configure(f, "pic" if key.endswith("pic") else key)
             self.fields[key] = f
 
     def clean(self):
