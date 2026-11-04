@@ -18,35 +18,35 @@ from .models import Submission
 MODES = {"purchase": "Purchase", "birth": "Birth", "repurchase": "Re-Purchase"}
 ORDER = {
     "purchase": [
-        "effective_at",
+        "farm_entry_date",
         "nlis",
         "rfid",
         "source_pic",
-        "vendor_name",
-        "vendor_address",
+        "source_name",
+        "source_address",
         "nvd",
         "breed",
         "sex",
         "mob",
         "purchase_cost",
-        "estimated_weeks",
+        "age_weeks",
     ],
     "repurchase": [
-        "effective_at",
+        "farm_entry_date",
         "nlis",
         "rfid",
         "source_pic",
-        "vendor_name",
-        "vendor_address",
+        "source_name",
+        "source_address",
         "nvd",
     ],
     "birth": [
-        "effective_at",
+        "farm_entry_date",
         "nlis",
         "rfid",
         "source_pic",
-        "vendor_name",
-        "vendor_address",
+        "source_name",
+        "source_address",
         "breed",
         "sex",
         "mob",
@@ -56,18 +56,18 @@ ORDER = {
     ],
 }
 LABELS = {
-    "effective_at": "Event Date",
+    "farm_entry_date": "Event Date",
     "nlis": "NLIS Visual ID — 16 characters",
     "rfid": "NLIS RFID — 15 digits",
     "source_pic": "Source PIC",
-    "vendor_name": "Source Name",
-    "vendor_address": "Source Address",
+    "source_name": "Source Name",
+    "source_address": "Source Address",
     "nvd": "NVD Number",
     "breed": "Breed/Description",
     "sex": "Sex",
     "mob": "MOB Number",
     "purchase_cost": "Cost (AUD)",
-    "estimated_weeks": "Estimated Age — weeks",
+    "age_weeks": "Estimated Age — weeks",
     "dob": "Date of Birth",
     "mother_nlis": "Mother’s NLIS ID or RFID",
 }
@@ -82,14 +82,14 @@ class EntryForm(ActionForm):
         super().__init__(actor, "register", data, **kwargs)
         self.mode = mode
         self.fields = {k: self.fields[k] for k in ORDER[mode]}
-        self.fields["effective_at"] = forms.DateField(
+        self.fields["farm_entry_date"] = forms.DateField(
             label="Event Date",
             initial=today(actor),
             widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
         )
-        self.fields[
-            "effective_at"
-        ].help_text = "Property calendar date. Historical dates require an administrator."
+        self.fields["farm_entry_date"].help_text = (
+            "Property calendar date. Historical dates require an administrator."
+        )
         for k, field in self.fields.items():
             field.label = LABELS[k]
         for k in ["nlis", "rfid"]:
@@ -101,9 +101,9 @@ class EntryForm(ActionForm):
                 label="Date of Birth",
                 widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
             )
-        if "estimated_weeks" in self.fields:
-            self.fields["estimated_weeks"] = forms.IntegerField(
-                required=False, min_value=0, label=LABELS["estimated_weeks"]
+        if "age_weeks" in self.fields:
+            self.fields["age_weeks"] = forms.IntegerField(
+                required=False, min_value=0, label=LABELS["age_weeks"]
             )
         if mode != "birth":
             for k in ["source_pic", "nvd"]:
@@ -111,8 +111,8 @@ class EntryForm(ActionForm):
         else:
             for k, v in dict(
                 source_pic=actor.pic.number,
-                vendor_name=actor.property.name,
-                vendor_address=actor.property.address,
+                source_name=actor.property.name,
+                source_address=actor.property.address,
                 purchase_cost="0.00",
             ).items():
                 self.fields[k].disabled = True
@@ -128,13 +128,14 @@ class EntryForm(ActionForm):
                     d[k] = services.validate_identifier(k, d[k])
                 except ValidationError as e:
                     self.add_error(k, e)
-        day = d.get("effective_at")
+        day = d.get("farm_entry_date")
         if day:
             if day > today(self.actor):
-                self.add_error("effective_at", "Future event dates are not accepted.")
+                self.add_error("farm_entry_date", "Future event dates are not accepted.")
             if day < today(self.actor) and not self.actor.administrator:
                 self.add_error(
-                    "effective_at", "Administrator access is required for historical entry dates."
+                    "farm_entry_date",
+                    "Administrator access is required for historical entry dates.",
                 )
             if d.get("dob") and d["dob"] > day:
                 self.add_error("dob", "Birth date cannot be later than arrival.")
@@ -143,13 +144,13 @@ class EntryForm(ActionForm):
     def payload(self):
         d = services.clean(self.cleaned_data)
         d["entry_source"] = self.mode
-        d["entry_date"] = d.pop("effective_at")
+
         return d
 
 
 def entry(request):
     actor = request.user
-    salt = "entry-list:" + str(actor.pk)
+    salt = "entry-list-v2:" + str(actor.pk)
 
     def empty_state():
         return dict(
@@ -187,7 +188,7 @@ def entry(request):
             editing = int(task.split(":")[1])
             row = state["rows"][editing]
             mode = row["entry_source"]
-            form = EntryForm(actor, mode, initial={**row, "effective_at": row["entry_date"]})
+            form = EntryForm(actor, mode, initial=row)
         elif task == "add" and form.is_valid():
             row = form.payload()
             if row.get("mob"):
@@ -204,7 +205,14 @@ def entry(request):
                 k: v
                 for k, v in form.cleaned_data.items()
                 if k
-                in ["effective_at", "source_pic", "vendor_name", "vendor_address", "nvd", "mob"]
+                in [
+                    "farm_entry_date",
+                    "source_pic",
+                    "source_name",
+                    "source_address",
+                    "nvd",
+                    "mob",
+                ]
             }
             form = EntryForm(actor, mode, initial=retained)
         elif task == "save":
@@ -217,9 +225,7 @@ def entry(request):
                 property=actor.property, actor=actor, key=state["key"]
             ).exists():
                 for i, row in enumerate(state["rows"], 1):
-                    check = EntryForm(
-                        actor, row["entry_source"], {**row, "effective_at": row["entry_date"]}
-                    )
+                    check = EntryForm(actor, row["entry_source"], row)
                     if not check.is_valid():
                         raise ValidationError(f"Row {i}: {check.errors.as_text()}")
             result = services.execute(actor, state["key"], "register", {"rows": state["rows"]})
@@ -228,7 +234,9 @@ def entry(request):
                 f"Saved {result['count']} animals to {actor.property.name} — PIC {actor.pic.number}.",
             )
             return render(
-                request, "herd/saved.html", {"result": result, "submission_key": state["key"]}
+                request,
+                "herd/saved.html",
+                {"result": result, "submission_key": state["key"]},
             )
     except (ValidationError, ValueError, IndexError, KeyError, IntegrityError) as exc:
         error = (
@@ -247,16 +255,12 @@ def entry(request):
                 fields=[
                     (
                         LABELS.get(
-                            "effective_at"
-                            if k == "entry_date"
-                            else "mob"
-                            if k == "mob_display"
-                            else k,
+                            "mob" if k == "mob_display" else k,
                             k,
                         ),
                         (
                             datetime.fromisoformat(v).strftime(actor.date_format.split(" ")[0])
-                            if k in ["entry_date", "dob"] and v
+                            if k in ["farm_entry_date", "dob"] and v
                             else v
                         ),
                     )

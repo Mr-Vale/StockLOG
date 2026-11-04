@@ -12,6 +12,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.db.models import Q, Sum
 
+from .cattle_fields import ALIASES, canonical
 from . import clock
 from .context import scope, validate_context
 from .models import (
@@ -232,6 +233,12 @@ def attach(event, animal, kind, value, reason=""):
         )
 
 
+def arrival_timestamp(actor, value):
+    if str(value).isdigit():
+        return int(value)
+    return clock.local_timestamp(str(value) + "T00:00:00", actor.property.timezone)
+
+
 def execute(actor, key, kind, data, expected_version=None):
     if not actor.is_active or not actor.property_id:
         raise PermissionDenied("An active property account is required.")
@@ -241,6 +248,14 @@ def execute(actor, key, kind, data, expected_version=None):
     digest = hashlib.sha256(
         json.dumps({"kind": kind, "pic": actor.pic_id, "data": payload}, sort_keys=True).encode()
     ).hexdigest()
+    legacy_digest = digest
+    if kind in ["register", "edit_animal"]:
+        payload = canonical(payload, arrival=kind == "register")
+        digest = hashlib.sha256(
+            json.dumps(
+                {"kind": kind, "pic": actor.pic_id, "data": payload}, sort_keys=True
+            ).encode()
+        ).hexdigest()
     with transaction.atomic(), localcontext() as ctx:
         ctx.prec = 60
         prop = Property.objects.select_for_update().get(pk=actor.property_id)
@@ -249,7 +264,7 @@ def execute(actor, key, kind, data, expected_version=None):
         actor = fresh
         prior = Submission.objects.filter(property=prop, actor=actor, key=str(key)).first()
         if prior:
-            if prior.digest != digest:
+            if prior.digest not in [digest, legacy_digest]:
                 raise ValidationError(
                     "This submission identifier belongs to different input. Start a new reviewed submission."
                 )
@@ -261,9 +276,9 @@ def execute(actor, key, kind, data, expected_version=None):
         date_rows = payload.get("rows") or [payload]
         entry_dates = (
             [
-                clock.local_timestamp(str(r["entry_date"]) + "T00:00:00", actor.property.timezone)
+                arrival_timestamp(actor, r["farm_entry_date"])
                 for r in date_rows
-                if r.get("entry_date")
+                if r.get("farm_entry_date")
             ]
             if kind == "register"
             else []
@@ -341,6 +356,7 @@ def register(actor, event, data):
         row = dict(original_row)
         try:
             result.append(_register_row(actor, event, row, seen, seen_animals))
+            original_row.update(row)
         except (ValidationError, ValueError, TypeError) as exc:
             raise ValidationError(
                 f"Row {row_number}: " + "; ".join(getattr(exc, "messages", [str(exc)]))
@@ -358,8 +374,8 @@ def _register_row(actor, event, row, seen, seen_animals):
             if (kind, v) in seen:
                 raise ValidationError("Duplicate identifier within the selected import.")
             seen.add((kind, v))
-    if row.get("entry_date"):
-        day = date.fromisoformat(str(row["entry_date"]))
+    if row.get("farm_entry_date") and not str(row["farm_entry_date"]).isdigit():
+        day = date.fromisoformat(str(row["farm_entry_date"]))
         local_today = (
             __import__("datetime")
             .datetime.fromtimestamp(clock.now(), ZoneInfo(actor.property.timezone))
@@ -373,7 +389,8 @@ def _register_row(actor, event, row, seen, seen_animals):
         # does not alter timestamps used by unrelated workflows/imports.
         at = clock.local_timestamp(day.isoformat() + "T00:00:00", actor.property.timezone)
     else:
-        at = int(row.get("effective_at", event.effective_at))
+        at = int(row.get("farm_entry_date", event.effective_at))
+    row["farm_entry_date"] = at
     if at > clock.now():
         raise ValidationError("Arrival cannot be future-dated.")
     source = row.get("entry_source", "purchase")
@@ -384,8 +401,8 @@ def _register_row(actor, event, row, seen, seen_animals):
     if source == "birth":
         row.update(
             source_pic=actor.pic.number,
-            vendor_name=actor.property.name,
-            vendor_address=actor.property.address,
+            source_name=actor.property.name,
+            source_address=actor.property.address,
             purchase_cost="0",
         )
         mother = str(row.get("mother_nlis", "")).strip().upper()
@@ -441,7 +458,9 @@ def _register_row(actor, event, row, seen, seen_animals):
             if (
                 tag_value
                 and not Identifier.objects.filter(
-                    animal=a, kind=tag_kind, value=validate_identifier(tag_kind, tag_value)
+                    animal=a,
+                    kind=tag_kind,
+                    value=validate_identifier(tag_kind, tag_value),
                 ).exists()
             ):
                 raise ValidationError(
@@ -500,11 +519,11 @@ def _register_row(actor, event, row, seen, seen_animals):
         .date()
     ):
         raise ValidationError("Birth date cannot be later than arrival.")
-    if row.get("estimated_weeks") not in [None, ""]:
-        weeks = int(row["estimated_weeks"])
+    if row.get("age_weeks") not in [None, ""]:
+        weeks = int(row["age_weeks"])
         if weeks < 0:
             raise ValidationError("Age cannot be negative.")
-        a.estimated_weeks, a.age_reference = weeks, at
+        a.age_weeks, a.age_reference = weeks, at
     a.status = "active"
     a.pic = actor.pic
     a.save()
@@ -513,7 +532,7 @@ def _register_row(actor, event, row, seen, seen_animals):
             attach(event, a, "nlis", nlis)
         if rfid:
             attach(event, a, "rfid", rfid)
-    row["effective_at"] = at
+    row["farm_entry_date"] = at
     event.details.setdefault("entry_rows", []).append(clean(row))
     visit = Presence.objects.create(
         animal=a,
@@ -562,9 +581,7 @@ def move(actor, event, data):
         administrator(actor)
         if not data.get("administration"):
             raise ValidationError("Use the historical administration workflow.")
-    destination = (
-        scoped(Mob, actor, data["destination"]) if data.get("destination") else None
-    )
+    destination = scoped(Mob, actor, data["destination"]) if data.get("destination") else None
     if destination and destination.retired:
         raise ValidationError("Select a current destination mob.")
     animals = targets(actor, data, at, event.effective_order)
@@ -668,11 +685,11 @@ def edit_animal(actor, event, data):
             )
     require_present(a, event.effective_at, event.effective_order)
     changed = {}
-    for field in ["breed", "sex", "estimated_weeks", "dob"]:
+    for field in ["breed", "sex", "age_weeks", "dob"]:
         if data.get(field) not in [None, ""]:
             if AttributeChange.objects.filter(
                 animal=a,
-                field=field,
+                field__in=[field] + [old for old, new in ALIASES.items() if new == field],
                 event__effective_at__gt=event.effective_at,
                 event__reversed_by__isnull=True,
             ).exists():
@@ -682,14 +699,10 @@ def edit_animal(actor, event, data):
             before = getattr(a, field)
             after = (
                 int(data[field])
-                if field == "estimated_weeks"
-                else (
-                    date.fromisoformat(data[field])
-                    if field == "dob"
-                    else str(data[field])
-                )
+                if field == "age_weeks"
+                else (date.fromisoformat(data[field]) if field == "dob" else str(data[field]))
             )
-            if field == "estimated_weeks" and after < 0:
+            if field == "age_weeks" and after < 0:
                 raise ValidationError("Age cannot be negative.")
             setattr(a, field, after)
             changed[field] = str(before or "")
@@ -700,17 +713,13 @@ def edit_animal(actor, event, data):
                 before=str(before or ""),
                 after=str(after),
             )
-    if "estimated_weeks" in changed:
+    if "age_weeks" in changed:
         changed["age_reference"] = a.age_reference
         a.age_reference = event.effective_at
     if data.get("purchase_cost") not in [None, ""]:
         price = number(data["purchase_cost"], nonnegative=True)
-        presence = (
-            a.presence.filter(start__lte=event.effective_at).order_by("-start").first()
-        )
-        purchase = a.allocations.filter(
-            category="purchase", event=presence.arrival
-        ).first()
+        presence = a.presence.filter(start__lte=event.effective_at).order_by("-start").first()
+        purchase = a.allocations.filter(category="purchase", event=presence.arrival).first()
         if purchase is None:
             raise ValidationError(
                 "No purchase record is available for this presence cycle."
@@ -863,9 +872,7 @@ def receipt(actor, event, data):
             )
     signature = hashlib.sha256(json.dumps(spec, sort_keys=True).encode()).hexdigest()
     values = dict(spec)
-    values["date_value"] = (
-        date.fromisoformat(spec["date_value"]) if spec["date_value"] else None
-    )
+    values["date_value"] = date.fromisoformat(spec["date_value"]) if spec["date_value"] else None
     item, created = Inventory.objects.get_or_create(
         property=actor.property,
         signature=signature,
@@ -1315,12 +1322,13 @@ def reverse(actor, event, data):
     participants(event, affected_animals)
     for change in AttributeChange.objects.filter(event=original):
         a = change.animal
-        setattr(a, change.field, change.before)
-        a.save(update_fields=[change.field])
+        field = ALIASES.get(change.field, change.field)
+        setattr(a, field, change.before)
+        a.save(update_fields=[field])
         AttributeChange.objects.create(
             event=event,
             animal=a,
-            field=change.field,
+            field=field,
             before=change.after,
             after=change.before,
         )
@@ -1443,10 +1451,8 @@ def purge(actor, event, data):
     except ValueError:
         cutoff = local.replace(year=local.year + 10, day=28)
     if clock.now() < int(cutoff.timestamp()):
-        raise ValidationError(
-            "Ten calendar years have not elapsed since the latest exit/death."
-        )
-    a.breed, a.sex, a.mother_nlis, a.dob, a.estimated_weeks, a.age_reference = (
+        raise ValidationError("Ten calendar years have not elapsed since the latest exit/death.")
+    a.breed, a.sex, a.mother_nlis, a.dob, a.age_weeks, a.age_reference = (
         "",
         "",
         "",
@@ -1520,11 +1526,7 @@ def identifier_review(actor, event, data):
     a = find_animal(actor, data["animal"])
     kind = data.get("identifier_kind", "rfid")
     value = validate_identifier(kind, data.get("identifier_value", ""))
-    reservation = (
-        Identifier.objects.filter(kind=kind, value=value)
-        .select_related("animal")
-        .first()
-    )
+    reservation = Identifier.objects.filter(kind=kind, value=value).select_related("animal").first()
     if data.get("resolution") == "retire_incorrect_current":
         if not reservation or reservation.animal_id != a.id:
             raise ValidationError(

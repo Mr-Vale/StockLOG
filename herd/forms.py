@@ -36,13 +36,13 @@ FIELDS = {
         "source_pic",
         "nvd",
         "nlis_upload_reference",
-        "vendor_name",
-        "vendor_address",
+        "source_name",
+        "source_address",
         "destination_paddock_text",
         "purchase_cost",
         "breed",
         "sex",
-        "estimated_weeks",
+        "age_weeks",
         "dob",
         "mother_nlis",
         "mob",
@@ -55,7 +55,7 @@ FIELDS = {
         "animal",
         "breed",
         "sex",
-        "estimated_weeks",
+        "age_weeks",
         "dob",
         "purchase_cost",
     ],
@@ -231,9 +231,10 @@ class ActionForm(forms.Form):
     def __init__(self, actor, operation, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.actor, self.operation = actor, operation
-        for key in COMMON + FIELDS[operation]:
+        common = ["farm_entry_date", "time_offset", "reason"] if operation == "register" else COMMON
+        for key in common + FIELDS[operation]:
             label = LABELS.get(key, key.replace("_", " ").capitalize())
-            if key == "effective_at":
+            if key in ["effective_at", "farm_entry_date"]:
                 f = forms.CharField(
                     required=False,
                     label=label,
@@ -315,23 +316,24 @@ class ActionForm(forms.Form):
 
     def clean(self):
         d = super().clean()
-        if d.get("effective_at"):
+        date_key = "farm_entry_date" if self.operation == "register" else "effective_at"
+        if d.get(date_key):
             try:
-                d["effective_at"] = local_timestamp(
-                    d["effective_at"] + str(d.get("time_offset") or ""),
+                d[date_key] = local_timestamp(
+                    d[date_key] + str(d.get("time_offset") or ""),
                     self.actor.property.timezone,
                 )
             except (ValueError, TypeError) as e:
-                self.add_error("effective_at", str(e))
+                self.add_error(date_key, str(e))
         else:
-            d.pop("effective_at", None)
+            d.pop(date_key, None)
         if d.get("animals"):
             d["animals"] = [
                 x.strip()
                 for x in d["animals"].replace(",", "\n").splitlines()
                 if x.strip()
             ]
-        for key in ["estimated_weeks", "restriction_days"]:
+        for key in ["age_weeks", "restriction_days"]:
             if d.get(key) not in [None, ""]:
                 try:
                     d[key] = int(d[key])

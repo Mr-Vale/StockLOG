@@ -436,7 +436,7 @@ def test_missing_purchase_cost_can_be_completed_without_rewriting_history(farm):
                 "animal": "A" * 16,
                 "purchase_cost": "123.45",
                 "breed": "Angus",
-                "estimated_weeks": 1,
+                "age_weeks": 1,
             },
         )
         row = reports.build(b, {})["rows"][0]

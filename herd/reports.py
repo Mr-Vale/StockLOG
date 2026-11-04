@@ -11,6 +11,7 @@ from django.db import transaction
 from django.db.models import Q, Sum
 
 from . import clock
+from .cattle_fields import ALIASES
 from .context import scope, validate_context
 from .models import Animal, Audit, Event, Inventory, Property
 
@@ -183,9 +184,9 @@ def animal_rows(actor, definition):
                 datetime.fromtimestamp(at, ZoneInfo(actor.property.timezone)).date()
                 - a.dob
             ).days // 7
-        elif a.estimated_weeks is not None and a.age_reference is not None:
+        elif a.age_weeks is not None and a.age_reference is not None:
             age = (
-                a.estimated_weeks
+                a.age_weeks
                 + (
                     datetime.fromtimestamp(at, ZoneInfo(actor.property.timezone)).date()
                     - datetime.fromtimestamp(
@@ -274,11 +275,7 @@ def animal_rows(actor, definition):
             "restriction_end": restrictions.ends_at if restrictions else None,
         }
         for cat in ["purchase", "sale", "feed", "chemical", "procedure", "vet"]:
-            row[cat] = (
-                sums.get(cat, Decimal(0))
-                if cat == "sale"
-                else -sums.get(cat, Decimal(0))
-            )
+            row[cat] = sums.get(cat, Decimal(0)) if cat == "sale" else -sums.get(cat, Decimal(0))
         rows.append(row)
     return rows
 
@@ -287,6 +284,14 @@ def animal_rows(actor, definition):
 @transaction.atomic
 def build(actor, definition):
     validate_context(actor)
+    definition = dict(definition)
+    if isinstance(definition.get("columns"), list):
+        definition["columns"] = [ALIASES.get(c, c) for c in definition["columns"]]
+    if isinstance(definition.get("sort"), str):
+        sort = definition["sort"]
+        definition["sort"] = ("-" if sort.startswith("-") else "") + ALIASES.get(
+            sort.lstrip("-"), sort.lstrip("-")
+        )
     validate_definition(definition)
     Property.objects.select_for_update().get(pk=actor.property_id)
     ds = definition.get("dataset", "animals")
@@ -587,7 +592,9 @@ def xlsx(report):
             cell.data_type = "s"
     ws.append(["Totals (full precision)", text(report["totals"])])
     ws.freeze_panes = "A5"
-    ws.auto_filter.ref = f"A4:{__import__('openpyxl').utils.get_column_letter(len(columns))}{ws.max_row - 1}"
+    ws.auto_filter.ref = (
+        f"A4:{__import__('openpyxl').utils.get_column_letter(len(columns))}{ws.max_row - 1}"
+    )
     for column in ws.columns:
         ws.column_dimensions[column[0].column_letter].width = min(
             60, max(16, len(str(column[3].value or "")) + 2)
@@ -824,8 +831,8 @@ LPA_FIELDS = {
         "destination_paddock",
         "breed",
         "sex",
-        "vendor_name",
-        "vendor_address",
+        "source_name",
+        "source_address",
         "source_pic",
         "notes",
         "identifiers",
@@ -874,9 +881,7 @@ def lpa_records(actor, dataset):
         "lpa6": ["receipt"],
     }
     records = []
-    for e in (
-        scope(Event, actor).filter(kind__in=kinds[dataset]).select_related("actor")
-    ):
+    for e in scope(Event, actor).filter(kind__in=kinds[dataset]).select_related("actor"):
         d = e.details
         if (
             dataset == "lpa3D"
@@ -977,15 +982,17 @@ def lpa_records(actor, dataset):
         elif dataset == "lpa5A":
             for row in d.get("rows") or [d]:
                 r = {
-                    "arrival_date": row.get("effective_at", e.effective_at),
+                    "arrival_date": row.get(
+                        "farm_entry_date", row.get("effective_at", e.effective_at)
+                    ),
                     "nvd": row.get("nvd", ""),
                     "nlis_upload_reference": row.get("nlis_upload_reference", ""),
                     "stock_count": 1,
                     "destination_paddock": row.get("destination_paddock_text", ""),
                     "breed": row.get("breed", "Unknown"),
                     "sex": row.get("sex", "Unknown"),
-                    "vendor_name": row.get("vendor_name", ""),
-                    "vendor_address": row.get("vendor_address", ""),
+                    "source_name": row.get("source_name", row.get("vendor_name", "")),
+                    "source_address": row.get("source_address", row.get("vendor_address", "")),
                     "source_pic": row.get("source_pic", ""),
                     "notes": row.get("notes", ""),
                     "identifiers": "; ".join(

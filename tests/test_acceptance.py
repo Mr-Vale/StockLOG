@@ -68,7 +68,7 @@ def test_complete_overlapping_cohorts(farm):
                     "purchase_cost": "100",
                     "breed": "Angus",
                     "sex": "M" if n <= st["males"] else "F",
-                    "estimated_weeks": 1,
+                    "age_weeks": 1,
                     "mob": st["mob"],
                 }
                 for n in range(1, st["count"] + 1)

@@ -5,6 +5,7 @@ from datetime import date, datetime
 
 from django.core.exceptions import ValidationError
 
+from .cattle_fields import canonical
 from .clock import local_timestamp
 from .services import preview
 
@@ -12,17 +13,17 @@ MAX_ROWS = 2000
 COLUMNS = [
     "nlis",
     "rfid",
-    "effective_at",
+    "farm_entry_date",
     "source_pic",
     "nvd",
     "purchase_cost",
     "breed",
     "sex",
-    "estimated_weeks",
+    "age_weeks",
     "dob",
     "mob",
-    "vendor_name",
-    "vendor_address",
+    "source_name",
+    "source_address",
     "nlis_upload_reference",
     "destination_paddock_text",
 ]
@@ -94,9 +95,12 @@ def mapped_preview(actor, headers, rows, mapping, shared):
         d["entry_source"] = "purchase"
         err = []
         try:
-            if d.get("effective_at") and not str(d["effective_at"]).isdigit():
-                d["effective_at"] = local_timestamp(d["effective_at"], actor.property.timezone)
-            if not d.get("effective_at"):
+            d = canonical(d, arrival=True)
+            if d.get("farm_entry_date") and not str(d["farm_entry_date"]).isdigit():
+                d["farm_entry_date"] = local_timestamp(
+                    d["farm_entry_date"], actor.property.timezone
+                )
+            if not d.get("farm_entry_date"):
                 raise ValidationError("Arrival date is required.")
             for key in ["nlis", "rfid"]:
                 val = d.get(key)
@@ -108,9 +112,7 @@ def mapped_preview(actor, headers, rows, mapping, shared):
             preview(actor, "register", d)
         except (ValidationError, ValueError, TypeError) as e:
             err = getattr(e, "messages", [str(e)])
-        missing = [
-            k for k in ["purchase_cost", "breed", "sex", "mob", "estimated_weeks"] if not d.get(k)
-        ]
+        missing = [k for k in ["purchase_cost", "breed", "sex", "mob", "age_weeks"] if not d.get(k)]
         output.append({"number": index + 1, "data": d, "missing": missing, "errors": err})
         errors.append(err)
     return output, errors

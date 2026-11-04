@@ -282,10 +282,7 @@ def report_view(request):
             operation = request.POST.get("template_operation")
             if operation == "delete" and not target:
                 raise ValidationError("Select a shared template to delete.")
-            if (
-                operation != "delete"
-                and not request.POST.get("template_name", "").strip()
-            ):
+            if operation != "delete" and not request.POST.get("template_name", "").strip():
                 raise ValidationError("Give the shared template a name.")
             services.execute(
                 request.user,
@@ -444,7 +441,9 @@ def import_view(request):
                     "register",
                     {
                         "rows": rows,
-                        "effective_at": min(int(r["effective_at"]) for r in rows),
+                        "farm_entry_date": min(
+                            int(r.get("farm_entry_date", r.get("effective_at"))) for r in rows
+                        ),
                     },
                 )
                 batch.confirmed = True
@@ -469,7 +468,10 @@ def accounts(request):
     return render(
         request,
         "herd/accounts.html",
-        {"accounts": Account.objects.all(), "properties": properties_for(request.user).prefetch_related("pics")},
+        {
+            "accounts": Account.objects.all(),
+            "properties": properties_for(request.user).prefetch_related("pics"),
+        },
     )
 
 

@@ -48,9 +48,9 @@ def active_table(request):
         entry = datetime.fromtimestamp(visit.start, zone).date() if visit else None
         born = a.dob
         origin = "Date of birth"
-        if born is None and a.estimated_weeks is not None and a.age_reference is not None:
+        if born is None and a.age_weeks is not None and a.age_reference is not None:
             born = datetime.fromtimestamp(a.age_reference, zone).date() - timedelta(
-                weeks=a.estimated_weeks
+                weeks=a.age_weeks
             )
             origin = "Estimated from recorded weeks and reference date"
         if born is None:

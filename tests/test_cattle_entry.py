@@ -40,7 +40,7 @@ def stage(c, token, **kw):
         review_state=response.context["review_state"],
         task="add",
         mode="purchase",
-        effective_at="2026-11-04",
+        farm_entry_date="2026-11-04",
         **purchase(),
     )
     payload.update(kw)
@@ -57,10 +57,10 @@ def test_mode_fields_optional_birth_and_locks(farm):
             b,
             "birth",
             dict(
-                effective_at="2026-11-04",
+                farm_entry_date="2026-11-04",
                 rfid="000000000000001",
                 source_pic="FORGED",
-                vendor_name="FORGED",
+                source_name="FORGED",
                 purchase_cost="999",
             ),
         )
@@ -73,8 +73,8 @@ def test_mode_fields_optional_birth_and_locks(farm):
         assert not alloc.unknown and alloc.amount == 0
         e = Event.objects.get(kind="register")
         assert e.details["birth_sources"][0]["source_pic"] == b.pic.number
-        assert e.details["birth_sources"][0]["vendor_name"] == p.name
-        f = EntryForm(b, "purchase", dict(effective_at="2026-11-04", **purchase()))
+        assert e.details["birth_sources"][0]["source_name"] == p.name
+        f = EntryForm(b, "purchase", dict(farm_entry_date="2026-11-04", **purchase()))
         assert f.is_valid(), f.errors
         run(b, f.payload())
         assert Allocation.objects.filter(unknown=True).count() == 1
@@ -94,7 +94,7 @@ def test_mother_either_identifier_retained(farm, mother):
 def test_date_only_dst_roundtrip_and_backdate_permissions(farm, day):
     _, a, b, _ = farm
     with clock.at(T):
-        f = EntryForm(a, "purchase", dict(effective_at=day, **purchase()))
+        f = EntryForm(a, "purchase", dict(farm_entry_date=day, **purchase()))
         assert f.is_valid(), f.errors
         run(a, f.payload())
         start = Animal.objects.get().presence.get().start
@@ -103,22 +103,26 @@ def test_date_only_dst_roundtrip_and_backdate_permissions(farm, day):
             .isoformat()
             .startswith(day + "T00:00:00")
         )
-        f = EntryForm(b, "purchase", dict(effective_at=day, **purchase()))
+        f = EntryForm(b, "purchase", dict(farm_entry_date=day, **purchase()))
         assert not f.is_valid()
         with pytest.raises(PermissionDenied):
-            run(b, dict(entry_date=day, **purchase()))
+            run(b, dict(farm_entry_date=day, **purchase()))
 
 
 def test_date_future_chronology_and_identifier_validation(farm):
     _, a, b, _ = farm
     with clock.at(T):
         for row in [
-            dict(effective_at="2026-11-05", **purchase()),
-            dict(effective_at="2026-11-04", rfid="１" * 15, source_pic="SRC", nvd="N"),
-            dict(effective_at="2026-11-04", nlis="short", source_pic="SRC", nvd="N"),
+            dict(farm_entry_date="2026-11-05", **purchase()),
+            dict(farm_entry_date="2026-11-04", rfid="１" * 15, source_pic="SRC", nvd="N"),
+            dict(farm_entry_date="2026-11-04", nlis="short", source_pic="SRC", nvd="N"),
         ]:
             assert not EntryForm(b, "purchase", row).is_valid()
-        f = EntryForm(b, "birth", dict(effective_at="2026-11-04", nlis="A" * 16, dob="2026-11-05"))
+        f = EntryForm(
+            b,
+            "birth",
+            dict(farm_entry_date="2026-11-04", nlis="A" * 16, dob="2026-11-05"),
+        )
         assert not f.is_valid()
         with pytest.raises(ValidationError, match="later than arrival"):
             run(a, dict(entry_source="birth", nlis="A" * 16, dob="2026-11-05"))
@@ -150,7 +154,7 @@ def test_review_edit_remove_modes_atomic_save_and_retry(farm):
         assert r.context["mode"] == "birth" and len(r.context["reviews"]) == 1
         r = post("edit:0")
         assert r.context["mode"] == "purchase"
-        r = post("add", editing="0", effective_at="2026-11-04", **purchase(breed="Angus"))
+        r = post("add", editing="0", farm_entry_date="2026-11-04", **purchase(breed="Angus"))
         # Explicitly choose purchase when correcting a purchase row.
         if r.context["error"] or len(r.context["reviews"]) != 1:
             pytest.fail(str(r.context["error"]))
@@ -159,7 +163,12 @@ def test_review_edit_remove_modes_atomic_save_and_retry(farm):
         assert Animal.objects.count() == 1
         c.post(
             "/workflow/entry/",
-            dict(farm_context=token, review_state=saved_state, task="save", mode="purchase"),
+            dict(
+                farm_context=token,
+                review_state=saved_state,
+                task="save",
+                mode="purchase",
+            ),
         )
         assert Animal.objects.count() == 1 and Submission.objects.count() == 1
 
@@ -180,7 +189,10 @@ def test_duplicate_batch_rollback_and_reserved_history(farm):
         with pytest.raises(ValidationError, match="reserved"):
             run(b, purchase())
         with pytest.raises(ValidationError):
-            run(b, dict(nlis="Z" * 16, rfid="000000000000001", source_pic="SRC", nvd="N"))
+            run(
+                b,
+                dict(nlis="Z" * 16, rfid="000000000000001", source_pic="SRC", nvd="N"),
+            )
 
 
 def test_staged_errors_and_context_change_do_not_redirect(farm):
@@ -220,14 +232,22 @@ def test_staged_errors_and_context_change_do_not_redirect(farm):
 def test_active_columns_sort_ages_restrictions_and_lifetime(farm):
     p, a, b, _ = farm
     with clock.at(T):
-        run(b, purchase(purchase_cost="900", dob="2025-08-04", sex="STEER", rfid="000000000000001"))
+        run(
+            b,
+            purchase(
+                purchase_cost="900",
+                dob="2025-08-04",
+                sex="STEER",
+                rfid="000000000000001",
+            ),
+        )
         run(
             b,
             dict(
                 nlis="0" * 15 + "2",
                 source_pic="SRC",
                 nvd="N",
-                estimated_weeks=26,
+                age_weeks=26,
                 purchase_cost="100",
             ),
         )
@@ -294,7 +314,10 @@ def test_repurchase_preserves_descriptions_costs_and_current_tags(farm):
         )
         animal = Animal.objects.get()
         services.execute(
-            b, "retag", "replace_tag", dict(animal=animal.label, nlis="A" * 16, reason="tag")
+            b,
+            "retag",
+            "replace_tag",
+            dict(animal=animal.label, nlis="A" * 16, reason="tag"),
         )
         services.execute(
             b,
@@ -331,7 +354,11 @@ def test_every_active_sort_toggles_and_retains_missing_last(farm, key):
         run(
             b,
             purchase(
-                purchase_cost="900", breed="Zulu", sex="M", dob="2025-01-01", rfid="000000000000009"
+                purchase_cost="900",
+                breed="Zulu",
+                sex="M",
+                dob="2025-01-01",
+                rfid="000000000000009",
             ),
         )
         run(

@@ -208,10 +208,10 @@ def summary(user):
         sex[{"M": "Male", "STEER": "Male", "F": "Female"}.get(a.sex, "Unknown")] += 1
         breeds[a.breed or "Unknown"] += 1
         born = a.dob
-        if not born and a.estimated_weeks is not None and a.age_reference is not None:
+        if not born and a.age_weeks is not None and a.age_reference is not None:
             born = datetime.fromtimestamp(
                 a.age_reference, ZoneInfo(user.property.timezone)
-            ).date() - timedelta(weeks=a.estimated_weeks)
+            ).date() - timedelta(weeks=a.age_weeks)
         group = (
             "Unknown age"
             if not born

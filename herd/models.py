@@ -103,7 +103,7 @@ class Animal(Scoped):
     breed = models.CharField(max_length=80, blank=True)
     sex = models.CharField(max_length=24, blank=True)
     dob = models.DateField(null=True, blank=True)
-    estimated_weeks = models.PositiveIntegerField(null=True, blank=True)
+    age_weeks = models.PositiveIntegerField(null=True, blank=True)
     age_reference = models.BigIntegerField(null=True)
     mother_nlis = models.CharField(max_length=16, blank=True)
     status = models.CharField(max_length=16, default="active")
