@@ -159,7 +159,11 @@ def test_confirmation_with_nonseekable_terminal(monkeypatch, answer, accepted):
 
         def terminal_open(path, mode):
             assert path == "/dev/tty"
-            return builtins.open(terminal, mode)
+            # Do not acquire a controlling terminal when pytest runs as the
+            # session leader in Docker; closing it would send pytest SIGHUP.
+            return builtins.open(
+                terminal, mode, opener=lambda path, flags: os.open(path, flags | os.O_NOCTTY)
+            )
 
         # Use real terminal streams: StringIO would conceal the r+ seekability bug.
         monkeypatch.setattr(update, "open", terminal_open, raising=False)
