@@ -7,3 +7,7 @@ version display, exact commit identification, stable tagged installation and
 backup-first compatible updates with health checks and conservative recovery.
 Existing unversioned installations require explicit administrator assessment;
 the updater never guesses their version or schema compatibility.
+
+## 0.2.1
+
+bulk edits and cattle exit updates
