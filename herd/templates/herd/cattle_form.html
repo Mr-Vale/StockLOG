@@ -1,0 +1,19 @@
+{% load static %}
+{% if instructions %}<p>{{ instructions }}</p>{% endif %}
+<p><strong>Source: {{ source }}</strong></p>{% if error %}<p role="alert">{{ error }}</p>{% endif %}
+{% if confirmation %}
+<h2>Review before confirming — {{ operation|title }}</h2>
+<dl>{% for label,value in details %}<dt><strong>{{ label }}</strong></dt><dd>{{ value|default_if_none:'Clear / Unknown' }}</dd>{% endfor %}</dl>
+<h3>Selected animals ({{ effects.count }})</h3><ul class="selected-animals">{% for label in effects.animal_labels %}<li>{{ label }}</li>{% endfor %}</ul>
+{% if operation == 'sale' %}<p>Sale total: ${{ effects.revenue }} AUD</p>{% endif %}
+{% for warning in warnings %}<p role="alert">{{ warning.animal }}: Farm Exit Date is before safe sale date {{ warning.safe_date }}.</p>{% endfor %}
+<form method="post">{% csrf_token %}<input type="hidden" name="farm_context" value="{{ request.farm_context }}"><input type="hidden" name="mode" value="{{ operation }}"><input type="hidden" name="animal_reference" value="{{ animal_reference }}"><input type="hidden" name="confirmed_payload" value="{{ confirmation }}">
+{% if warnings %}<label><input type="checkbox" name="accept_restriction" required> I explicitly accept the displayed withholding restrictions under the existing departure rules.</label>{% endif %}
+<button {% if animal %}class="primary-action"{% endif %}>Confirm and save</button></form><a href="">Return to form</a>
+{% else %}
+<form method="post" class="entry-form" data-cattle-form>{% csrf_token %}<input type="hidden" name="farm_context" value="{{ request.farm_context }}"><input type="hidden" name="animal_reference" value="{{ animal_reference }}">
+{% if modes %}<div class="entry-modes">{% for value,label in modes %}<button type="submit" name="switch_mode" value="{{ value }}" formnovalidate {% if operation == value %}aria-current="true"{% endif %}>{{ label }}</button>{% endfor %}</div><input type="hidden" name="mode" value="{{ operation }}"><h2>{{ operation|title }}</h2>{% endif %}
+{{ form.non_field_errors }}<div class="entry-fields">{% for field in form %}<div {% if field.name == 'animals' %}class="animal-picker"{% endif %}>{{ field.label_tag }}{{ field }}{{ field.errors }}{% if field.help_text %}<span class="helptext">{{ field.help_text }}</span>{% endif %}</div>{% endfor %}</div>
+<datalist id="breed-options">{% for breed in breeds %}<option value="{{ breed }}">{% endfor %}</datalist>
+<button {% if animal %}class="primary-action"{% endif %} name="task" value="preview">Preview changes</button></form>
+{% endif %}<script src="{% static 'herd/cattle.js' %}" defer></script>

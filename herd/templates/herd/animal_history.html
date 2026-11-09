@@ -1,0 +1,7 @@
+{% extends 'herd/base.html' %}{% load display %}{% block content %}
+<h1>Lifetime history — {{ animal.label }}</h1>
+<a class="primary-action" href="{% url 'animal' animal.pk %}">Return to animal details</a>
+<h2>Identifier lineage</h2>
+<ul>{% for tag in animal.identifiers.all %}<li>{{ tag.kind }}: {{ tag.value }} ({% if tag.current %}current{% else %}retired{% endif %})</li>{% endfor %}</ul>
+{% for event in events %}<article><strong>{{ event.kind }}</strong> · effective {{ event.effective_at|user_time:user }} · recorded {{ event.submitted_at|user_time:user }}<pre>{{ event.details }}</pre>{% if event.reversed_by %}<p>Reversed by {{ event.reversed_by_id }}</p>{% endif %}</article>{% empty %}<p>No lifetime events recorded.</p>{% endfor %}
+{% endblock %}

@@ -34,14 +34,14 @@ def run(user, kind, data, **kw):
 
 def animal(user, n=1, **kw):
     kw.setdefault("entry_date", "2026-11-05")
-    payload = dict(
-        nlis=f"0TEST001ABC{n:05}",
-        rfid=f"{n:015}",
-        source_pic="0FROM001",
-        nvd="00000001",
-        purchase_cost=100,
+    payload = {
+        "nlis": f"0TEST001ABC{n:05}",
+        "rfid": f"{n:015}",
+        "source_pic": "0FROM001",
+        "nvd": "00000001",
+        "purchase_cost": 100,
         **kw,
-    )
+    }
     result = run(user, "register", payload)
     return Animal.objects.get(pk=result["animals"][0])
 
@@ -535,7 +535,7 @@ def test_home_text_and_edit_field_order_and_no_time(farm):
         client, token = client_for(b)
         home = client.get("/").content.decode()
         assert "Age boundaries are" not in home and "Current mobs include" not in home
-        response = client.get("/action/edit_animal/", {"animal": x.label})
+        response = client.get("/action/edit_animal/", {"animal": x.label}, follow=True)
         assert list(response.context["form"].fields) == EDIT_ORDER
         html = response.content.decode()
         assert 'type="date"' in html and "time_offset" not in html and "datetime-local" not in html

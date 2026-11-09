@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views, home
+from . import home, views
 
 urlpatterns = [
     path("properties/add/", home.add_property, name="add_property"),
@@ -19,6 +19,7 @@ urlpatterns = [
     path("action/<str:operation>/", views.action, name="action"),
     path("animals/", views.animals, name="animals"),
     path("animal/<uuid:pk>/", views.animal_detail, name="animal"),
+    path("animal/<uuid:pk>/history/", views.animal_history, name="animal_history"),
     path("inventory/", views.inventory, name="inventory"),
     path("events/", views.events, name="events"),
     path("reports/", views.report_view, name="reports"),

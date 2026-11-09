@@ -287,14 +287,17 @@ def restriction_warnings(actor, data):
     return warnings
 
 
-def workflow(request, operation):
+def workflow(request, operation, animal=None):
     actor = request.user
     is_exit = operation in EXIT_MODES
     if operation == "bulk_edit":
         services.administrator(actor)
-    animal = None
-    reference = request.POST.get("animal_reference") or request.GET.get("animal")
-    if operation == "edit_animal":
+    reference = (
+        animal.label
+        if animal
+        else request.POST.get("animal_reference") or request.GET.get("animal")
+    )
+    if operation == "edit_animal" and animal is None:
         if not reference:
             return redirect("animals")
         try:
@@ -303,6 +306,8 @@ def workflow(request, operation):
             from django.http import Http404
 
             raise Http404("Animal is unavailable on this PIC.")
+        if request.method == "GET":
+            return redirect("animal", pk=animal.pk)
     initial = {}
     if is_exit:
         operation = request.POST.get("switch_mode") or request.POST.get("mode", operation)
@@ -357,6 +362,8 @@ def workflow(request, operation):
                 actor, state["key"], operation, state["data"], state["version"]
             )
             messages.success(request, f"Saved {result.get('count', 1)} animal(s).")
+            if animal:
+                return redirect("animal", pk=animal.pk)
             return redirect("animals")
         if request.method == "POST" and request.POST.get("task") == "preview" and form.is_valid():
             data = services.clean(form.cleaned_data)
@@ -404,4 +411,9 @@ def workflow(request, operation):
                     **{"update_" + k: True for k in initial.get("update_fields", [])},
                 }
             ctx["form"] = make_form(data=initial)
+    if animal:
+        from .animal_details import summary
+
+        ctx.update(summary(actor, animal))
+        return render(request, "herd/animal.html", ctx)
     return render(request, "herd/cattle.html", ctx)
