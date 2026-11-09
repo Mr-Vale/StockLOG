@@ -39,7 +39,7 @@ def test_summary_gaps_preview_save_and_selected_history(farm):
         response = client.get(url(x))
         html = response.content.decode()
         assert "<h1>Animal details</h1>" in html
-        assert "<strong>Visual ID</strong>: Not recorded" in html
+        assert "<strong>NLIS Visual ID</strong>: Not recorded" in html
         for label in [
             "Source name",
             "Source address",
@@ -55,7 +55,8 @@ def test_summary_gaps_preview_save_and_selected_history(farm):
         assert "Complete or correct details" not in html
         assert "<h2>Lifetime history" not in html and "<pre>" not in html
         assert "Revenue" not in html and "P/L" not in html and "P&L" not in html
-        assert "Farm exit</h2>" not in html
+        assert 'id="farm-exit-heading">Farm exit</h2>' in html
+        assert "<dt>Farm exit date</dt>" not in html
         assert "View lifetime history" in html
         form = response.context["form"]
         assert form.fields["source_pic"].disabled and form.fields["nvd"].disabled
@@ -129,7 +130,8 @@ def test_cost_exit_and_repurchase_use_animal_lifetime_not_group_or_net(farm):
         assert response.context["summary"]["cost"] == Decimal("175")
         assert response.context["summary"]["status"] == "Active"
         assert response.context["summary"]["source_pic"] == "0FROM002"
-        assert "Farm exit</h2>" not in response.content.decode()
+        assert 'id="farm-exit-heading">Farm exit</h2>' in response.content.decode()
+        assert "<dt>Farm exit date</dt>" not in response.content.decode()
 
 
 def test_birth_death_zero_sale_and_transfer_acquisition(farm):
@@ -224,6 +226,7 @@ def test_missing_source_completion_identifier_history_and_stale_preview(farm):
         run(b, "observation", dict(animal=x.label, notes="Intervening activity"))
         response = client.post(url(x), {"farm_context": token, "confirmed_payload": signed})
         assert "changed since preview" in response.context["error"]
+        assert '<details class="animal-edit" open>' in response.content.decode()
         assert response.context["form"]["source_pic"].value() == "0FROM002"
         assert response.context["summary"]["source_pic"] == ""
         preview = client.post(url(x), payload)
@@ -259,3 +262,18 @@ def test_latest_treatment_and_cost_compensation(farm):
         response = client.get(url(x))
         assert response.context["summary"]["treatment_date"] == calendar_date(b, T)
         assert response.context["summary"]["cost"] == Decimal("101")
+
+
+def test_edit_disclosure_opens_for_field_and_confirmation_errors(farm):
+    _, admin, b, _ = farm
+    with clock.at(T):
+        x = animal(b)
+        client, token = client_for(b)
+        response = client.get(url(x))
+        assert '<details class="animal-edit" open>' not in response.content.decode()
+        response = client.post(url(x), preview_data(response, token, entry_date=""))
+        assert response.context["form"].errors["entry_date"]
+        assert '<details class="animal-edit" open>' in response.content.decode()
+        response = client.post(url(x), {"farm_context": token, "confirmed_payload": "invalid"})
+        assert response.context["error"]
+        assert '<details class="animal-edit" open>' in response.content.decode()

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.4
+
+Refine the combined animal detail page with labelled NLIS identifiers, actions
+above responsive summary cards, and an Edit Animal form collapsed by default.
+Keep editing open for validation errors and preview/confirmation. Always show
+the Farm exit card, with an empty body for active animals.
+
+Compatible UI patch from 0.2.3; no database migrations, dependency changes or
+reinstall required. Existing permissions, records and save/history workflows
+are preserved.
+
 ## 0.1.0
 
 First versioned release of the current property/PIC application. Adds Settings
