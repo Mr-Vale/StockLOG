@@ -1,1 +1,54 @@
-{% extends 'herd/base.html' %}{% load display %}{% block content %}<h1>{{ animal.label }}</h1><p>{{ row.status }} · {{ row.breed }} · {{ row.sex }} · {{ row.mob }}</p><p>Costs {{ row.cost|floatformat:2 }} AUD · Revenue {{ row.revenue|floatformat:2 }} AUD · {% if row.financial_complete %}P/L to date {{ row.profit|floatformat:2 }} AUD{% else %}Financial history incomplete{% endif %}</p><h2>Identifier lineage</h2><p>{{ row.tags }}</p><div class="cards"><a href="{% url 'action' 'replace_tag' %}?animal={{ animal.label }}">Replace ear tag</a><a href="{% url 'action' 'edit_animal' %}?animal={{ animal.label }}">Complete or correct details</a><a href="{% url 'action' 'treat' %}?animal={{ animal.label }}">Treat</a><a href="{% url 'action' 'procedure' %}?animal={{ animal.label }}">Procedure</a></div><p><a href="{% url 'action' 'observation' %}?animal={{ animal.label }}">Record observation</a></p><h2>Lifetime history</h2>{% for event in events %}<article><strong>{{ event.kind }}</strong> · effective {{ event.effective_at|user_time:user }} · recorded {{ event.submitted_at|user_time:user }}<pre>{{ event.details }}</pre>{% if event.reversed_by %}<p>Reversed by {{ event.reversed_by_id }}</p>{% endif %}</article>{% endfor %}{% endblock %}
+{% extends 'herd/base.html' %}{% block content %}
+<section aria-label="Animal summary" class="animal-summary">
+<h1>{{ summary.visual_id|default:'Animal details' }}</h1>
+<p><strong>RFID</strong>: {{ summary.rfid|default:'Not recorded' }}</p>
+{% if not summary.visual_id %}<p><strong>Visual ID</strong>: Not recorded</p>{% endif %}
+<h2>Animal details</h2>
+<dl>
+<dt>Status</dt><dd>{{ summary.status }}</dd>
+<dt>Breed or description</dt><dd>{{ animal.breed|default:'Not recorded' }}</dd>
+<dt>Sex</dt><dd>{{ animal.sex|default:'Not recorded' }}</dd>
+<dt>Current mob number</dt><dd>{% if animal.status == 'active' %}{{ summary.mob|default:'Not recorded' }}{% else %}Not applicable — animal has left{% endif %}</dd>
+</dl>
+<h2>Farm entry</h2>
+<dl>
+<dt>Farm entry date</dt><dd>{{ summary.entry_date|date:'d/m/Y'|default:'Not recorded' }}</dd>
+{% if summary.purchased %}
+<dt>Source PIC</dt><dd>{{ summary.source_pic|default:'Not recorded' }}</dd>
+<dt>Source name</dt><dd>{{ summary.source_name|default:'Not recorded' }}</dd>
+<dt>Source address</dt><dd>{{ summary.source_address|default:'Not recorded' }}</dd>
+<dt>Incoming NVD number</dt><dd>{{ summary.incoming_nvd|default:'Not recorded' }}</dd>
+{% else %}<dt>Entry type</dt><dd>Farm birth — purchase source and incoming NVD do not apply.</dd>{% endif %}
+</dl>
+<h2>Cost and treatment</h2>
+<dl>
+<dt>Total cost to date</dt><dd>{{ summary.cost|floatformat:2 }} AUD</dd>
+<dt>Latest treatment date</dt><dd>{{ summary.treatment_date|date:'d/m/Y'|default:'Not recorded' }}</dd>
+</dl>
+{% if not summary.financial_complete %}<p>Some costs are not recorded. The total includes recorded costs only.</p>{% endif %}
+{% if animal.status != 'active' %}
+<h2>Farm exit</h2>
+<dl>
+<dt>Farm exit date</dt><dd>{{ summary.exit_date|date:'d/m/Y'|default:'Not recorded' }}</dd>
+{% if summary.destination_applicable %}
+<dt>Destination PIC</dt><dd>{{ summary.destination_pic|default:'Not recorded' }}</dd>
+<dt>Destination name</dt><dd>{{ summary.destination_name|default:'Not recorded' }}</dd>
+<dt>Destination address</dt><dd>{{ summary.destination_address|default:'Not recorded' }}</dd>
+<dt>Outgoing NVD number</dt><dd>{{ summary.outgoing_nvd|default:'Not recorded' }}</dd>
+{% else %}<dt>Exit type</dt><dd>Death — destination, outgoing NVD and sale price do not apply.</dd>{% endif %}
+{% if summary.sale %}<dt>Sale price</dt><dd>{% if summary.sale_price is not None %}{{ summary.sale_price|floatformat:2 }} AUD{% else %}Not recorded{% endif %}</dd>{% endif %}
+</dl>
+{% endif %}
+</section>
+{% if form %}<section aria-labelledby="edit-heading"><h2 id="edit-heading">Edit Animal</h2>
+{% include 'herd/cattle_form.html' %}
+</section>{% endif %}
+<section aria-labelledby="actions-heading"><h2 id="actions-heading">Animal actions</h2>
+<div class="cards primary-actions">
+<a href="{% url 'action' 'replace_tag' %}?animal={{ animal.label|urlencode }}">Replace ear tag</a>
+<a href="{% url 'action' 'treat' %}?animal={{ animal.label|urlencode }}">Treat</a>
+<a href="{% url 'action' 'procedure' %}?animal={{ animal.label|urlencode }}">Procedure</a>
+<a href="{% url 'action' 'observation' %}?animal={{ animal.label|urlencode }}">Record observation</a>
+<a href="{% url 'animal_history' animal.pk %}">View lifetime history</a>
+</div></section>
+{% endblock %}

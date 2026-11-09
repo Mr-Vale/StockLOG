@@ -226,13 +226,23 @@ def animals(request):
 @login_required
 def animal_detail(request, pk):
     a = get_object_or_404(scope(Animal, request.user), pk=pk, purged=False)
-    report = reports.build(request.user, {"filters": {"animal": str(a.id)}})
+    if a.status == "active":
+        from .cattle import workflow
+
+        return workflow(request, "edit_animal", animal=a)
+    from .animal_details import summary
+
+    return render(request, "herd/animal.html", summary(request.user, a))
+
+
+@login_required
+def animal_history(request, pk):
+    a = get_object_or_404(scope(Animal, request.user), pk=pk, purged=False)
     return render(
         request,
-        "herd/animal.html",
+        "herd/animal_history.html",
         {
             "animal": a,
-            "row": report["rows"][0],
             "events": Event.objects.filter(
                 property=request.user.property, participants__animal=a
             ).distinct(),
