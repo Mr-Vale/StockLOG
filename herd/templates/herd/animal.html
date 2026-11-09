@@ -1,16 +1,30 @@
 {% extends 'herd/base.html' %}{% block content %}
 <section aria-label="Animal summary" class="animal-summary">
+<p class="identifier-label">NLIS Visual ID</p>
 <h1>{{ summary.visual_id|default:'Animal details' }}</h1>
-<p><strong>RFID</strong>: {{ summary.rfid|default:'Not recorded' }}</p>
-{% if not summary.visual_id %}<p><strong>Visual ID</strong>: Not recorded</p>{% endif %}
-<h2>Animal details</h2>
+<p><strong>NLIS RFID</strong>: {{ summary.rfid|default:'Not recorded' }}</p>
+{% if not summary.visual_id %}<p><strong>NLIS Visual ID</strong>: Not recorded</p>{% endif %}
+<section aria-labelledby="actions-heading"><h2 id="actions-heading">Animal actions</h2>
+<div class="cards primary-actions">
+<a href="{% url 'action' 'replace_tag' %}?animal={{ animal.label|urlencode }}">Replace ear tag</a>
+<a href="{% url 'action' 'treat' %}?animal={{ animal.label|urlencode }}">Treat</a>
+<a href="{% url 'action' 'procedure' %}?animal={{ animal.label|urlencode }}">Procedure</a>
+<a href="{% url 'action' 'observation' %}?animal={{ animal.label|urlencode }}">Record observation</a>
+<a href="{% url 'animal_history' animal.pk %}">View lifetime history</a>
+</div></section>
+
+<div class="animal-summary-cards">
+<section class="animal-summary-card" aria-labelledby="animal-details-heading">
+<h2 id="animal-details-heading">Animal details</h2>
 <dl>
 <dt>Status</dt><dd>{{ summary.status }}</dd>
 <dt>Breed or description</dt><dd>{{ animal.breed|default:'Not recorded' }}</dd>
 <dt>Sex</dt><dd>{{ animal.sex|default:'Not recorded' }}</dd>
 <dt>Current mob number</dt><dd>{% if animal.status == 'active' %}{{ summary.mob|default:'Not recorded' }}{% else %}Not applicable — animal has left{% endif %}</dd>
 </dl>
-<h2>Farm entry</h2>
+</section>
+<section class="animal-summary-card" aria-labelledby="farm-entry-heading">
+<h2 id="farm-entry-heading">Farm entry</h2>
 <dl>
 <dt>Farm entry date</dt><dd>{{ summary.entry_date|date:'d/m/Y'|default:'Not recorded' }}</dd>
 {% if summary.purchased %}
@@ -20,14 +34,18 @@
 <dt>Incoming NVD number</dt><dd>{{ summary.incoming_nvd|default:'Not recorded' }}</dd>
 {% else %}<dt>Entry type</dt><dd>Farm birth — purchase source and incoming NVD do not apply.</dd>{% endif %}
 </dl>
-<h2>Cost and treatment</h2>
+</section>
+<section class="animal-summary-card" aria-labelledby="cost-heading">
+<h2 id="cost-heading">Cost and treatment</h2>
 <dl>
 <dt>Total cost to date</dt><dd>{{ summary.cost|floatformat:2 }} AUD</dd>
 <dt>Latest treatment date</dt><dd>{{ summary.treatment_date|date:'d/m/Y'|default:'Not recorded' }}</dd>
 </dl>
 {% if not summary.financial_complete %}<p>Some costs are not recorded. The total includes recorded costs only.</p>{% endif %}
-{% if animal.status != 'active' %}
-<h2>Farm exit</h2>
+</section>
+<section class="animal-summary-card" aria-labelledby="farm-exit-heading">
+<h2 id="farm-exit-heading">Farm exit</h2>
+<div class="summary-card-body">{% if animal.status != 'active' %}
 <dl>
 <dt>Farm exit date</dt><dd>{{ summary.exit_date|date:'d/m/Y'|default:'Not recorded' }}</dd>
 {% if summary.destination_applicable %}
@@ -38,17 +56,12 @@
 {% else %}<dt>Exit type</dt><dd>Death — destination, outgoing NVD and sale price do not apply.</dd>{% endif %}
 {% if summary.sale %}<dt>Sale price</dt><dd>{% if summary.sale_price is not None %}{{ summary.sale_price|floatformat:2 }} AUD{% else %}Not recorded{% endif %}</dd>{% endif %}
 </dl>
-{% endif %}
+{% endif %}</div>
 </section>
-{% if form %}<section aria-labelledby="edit-heading"><h2 id="edit-heading">Edit Animal</h2>
+</div>
+</section>
+{% if form %}<details class="animal-edit" {% if form.is_bound or error or confirmation %}open{% endif %}>
+<summary><h2>Edit Animal</h2></summary>
 {% include 'herd/cattle_form.html' %}
-</section>{% endif %}
-<section aria-labelledby="actions-heading"><h2 id="actions-heading">Animal actions</h2>
-<div class="cards primary-actions">
-<a href="{% url 'action' 'replace_tag' %}?animal={{ animal.label|urlencode }}">Replace ear tag</a>
-<a href="{% url 'action' 'treat' %}?animal={{ animal.label|urlencode }}">Treat</a>
-<a href="{% url 'action' 'procedure' %}?animal={{ animal.label|urlencode }}">Procedure</a>
-<a href="{% url 'action' 'observation' %}?animal={{ animal.label|urlencode }}">Record observation</a>
-<a href="{% url 'animal_history' animal.pk %}">View lifetime history</a>
-</div></section>
+</details>{% endif %}
 {% endblock %}
