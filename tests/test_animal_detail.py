@@ -3,7 +3,6 @@
 from decimal import Decimal
 
 import pytest
-from django.core import signing
 from django.urls import reverse
 
 from herd import clock
@@ -21,16 +20,17 @@ def history_url(x):
     return reverse("animal_history", args=[x.pk])
 
 
-def preview_data(response, token, **changes):
+def edit_data(response, token, **changes):
     return {
         **{k: v for k, v in response.context["form"].initial.items() if v is not None},
         "farm_context": token,
-        "task": "preview",
+        "task": "save",
+        "submission_key": response.context["submission_key"],
         **changes,
     }
 
 
-def test_summary_gaps_preview_save_and_selected_history(farm):
+def test_summary_gaps_direct_save_and_selected_history(farm):
     _, admin, b, _ = farm
     with clock.at(T):
         x = animal(b, purchase_cost=None, nlis="")
@@ -61,13 +61,12 @@ def test_summary_gaps_preview_save_and_selected_history(farm):
         form = response.context["form"]
         assert form.fields["source_pic"].disabled and form.fields["nvd"].disabled
         assert form.fields["rfid"].disabled and not form.fields["nlis"].disabled
-        payload = preview_data(response, token, vendor_name="Recorded source", purchase_cost="0")
+        payload = edit_data(response, token, vendor_name="Recorded source", purchase_cost="0")
         payload.update(source_pic="0EVIL001", rfid="999999999999999")
         before = Event.objects.count()
         response = client.post(url(x), payload)
-        signed = response.context["confirmation"]
-        assert Event.objects.count() == before  # Preview rolls back every mutation.
-        response = client.post(url(x), {"farm_context": token, "confirmed_payload": signed})
+        assert Event.objects.count() == before + 1
+        assert client.post(url(x), payload).status_code == 302  # Exact retry is idempotent.
         assert response.status_code == 302 and response.url == url(x)
         response = client.get(response.url)
         assert response.context["summary"]["source_name"] == "Recorded source"
@@ -165,28 +164,27 @@ def test_birth_death_zero_sale_and_transfer_acquisition(farm):
         assert response.context["summary"]["cost"] == 100
 
 
-def test_detail_and_history_access_and_confirmation_binding(farm):
+def test_detail_and_history_access_and_direct_save_identity(farm):
     p, admin, b, _ = farm
     with clock.at(T):
         x, y = animal(b), animal(b, 2)
         client, token = client_for(admin)
         response = client.get(url(x))
         assert not response.context["form"].fields["source_pic"].disabled
-        response = client.post(url(x), preview_data(response, token, source_pic="0FROM002"))
-        signed = response.context["confirmation"]
-        other = client.post(url(y), {"farm_context": token, "confirmed_payload": signed})
-        assert "Animal changed" in other.context["error"]
-        state = signing.loads(signed, salt="cattle:" + str(admin.pk))
-        assert state["data"]["animal"] == x.label
-        # Recheck privileges at confirmation, including a role change after preview.
+        payload = edit_data(response, token, breed="Hereford", animal_reference=y.label)
+        assert client.post(url(x), payload).url == url(x)
+        x.refresh_from_db()
+        y.refresh_from_db()
+        assert x.breed == "Hereford" and y.breed == ""
+        # A role change before save re-evaluates disabled identification/source fields.
         admin.__class__.objects.filter(pk=admin.pk).update(role="standard")
-        assert (
-            client.post(url(x), {"farm_context": token, "confirmed_payload": signed}).status_code
-            == 403
-        )
-        assert not Event.objects.filter(kind="edit_animal").exists()
+        response = client.get(url(x))
+        assert response.context["form"].fields["source_pic"].disabled
+        payload = edit_data(response, token, source_pic="0FROM002")
+        assert client.post(url(x), payload).status_code == 302
+        assert client.get(url(x)).context["summary"]["source_pic"] == "0FROM001"
         client, token = client_for(b)
-        assert client.post(url(x), {"farm_context": "wrong", "task": "preview"}).status_code == 403
+        assert client.post(url(x), {"farm_context": "wrong", "task": "save"}).status_code == 403
         wrong_pic = PIC.objects.create(property=p, number="0TEST002")
         outsider = Animal.objects.create(property=p, pic=wrong_pic)
         other_property = Property.objects.create(name="Other", address="Other", owner="Other")
@@ -201,38 +199,24 @@ def test_detail_and_history_access_and_confirmation_binding(farm):
         assert client.get(url(x)).status_code == 302
         assert client.get(history_url(x)).status_code == 302
 
-
-def test_missing_source_completion_identifier_history_and_stale_preview(farm):
+def test_missing_source_completion_identifier_history_and_invalid_save(farm):
     _, admin, b, _ = farm
     with clock.at(T):
         x = animal(b)
-        # Existing corrections can deliberately clear legacy/missing acquisition fields.
-        run(
-            admin,
-            "edit_animal",
-            dict(animal=x.label, update_fields=["source_pic", "nvd"], source_pic="", nvd=""),
-        )
+        run(admin, "edit_animal", dict(animal=x.label, update_fields=["source_pic", "nvd"], source_pic="", nvd=""))
         client, token = client_for(admin)
         response = client.get(url(x))
         html = response.content.decode()
         for key in ["Source PIC", "Incoming NVD number"]:
             assert f"<dt>{key}</dt><dd>Not recorded</dd>" in html
-        payload = preview_data(
-            response, token, source_pic="0FROM002", nvd="00000002", nlis="0TEST001ABC99999"
-        )
-        preview = client.post(url(x), payload)
-        signed = preview.context["confirmation"]
-        # An intervening event invalidates the signed preview and keeps the entered form.
-        run(b, "observation", dict(animal=x.label, notes="Intervening activity"))
-        response = client.post(url(x), {"farm_context": token, "confirmed_payload": signed})
-        assert "changed since preview" in response.context["error"]
-        assert '<details class="animal-edit" open>' in response.content.decode()
-        assert response.context["form"]["source_pic"].value() == "0FROM002"
-        assert response.context["summary"]["source_pic"] == ""
-        preview = client.post(url(x), payload)
-        response = client.post(
-            url(x), {"farm_context": token, "confirmed_payload": preview.context["confirmation"]}
-        )
+        payload = edit_data(response, token, source_pic="0FROM002", nvd="bad", nlis="0TEST001ABC99999")
+        invalid = client.post(url(x), payload)
+        assert invalid.context["form"].errors["nvd"]
+        assert '<details class="animal-edit" open>' in invalid.content.decode()
+        assert invalid.context["form"]["source_pic"].value() == "0FROM002"
+        assert invalid.context["summary"]["source_pic"] == ""
+        payload["nvd"] = "00000002"
+        response = client.post(url(x), payload)
         assert response.url == url(x)
         response = client.get(response.url)
         assert response.context["summary"]["visual_id"] == "0TEST001ABC99999"
@@ -241,7 +225,6 @@ def test_missing_source_completion_identifier_history_and_stale_preview(farm):
         assert x.identifiers.filter(value="0TEST001ABC00001", current=False).exists()
         history = client.get(history_url(x)).content.decode()
         assert "0TEST001ABC00001" in history and "0TEST001ABC99999" in history
-
 
 def test_latest_treatment_and_cost_compensation(farm):
     from herd.cattle_services import calendar_date
@@ -271,7 +254,7 @@ def test_edit_disclosure_opens_for_field_and_confirmation_errors(farm):
         client, token = client_for(b)
         response = client.get(url(x))
         assert '<details class="animal-edit" open>' not in response.content.decode()
-        response = client.post(url(x), preview_data(response, token, entry_date=""))
+        response = client.post(url(x), edit_data(response, token, entry_date=""))
         assert response.context["form"].errors["entry_date"]
         assert '<details class="animal-edit" open>' in response.content.decode()
         response = client.post(url(x), {"farm_context": token, "confirmed_payload": "invalid"})

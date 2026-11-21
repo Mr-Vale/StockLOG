@@ -27,7 +27,7 @@ if (form) {
     }
   }
   // Keep each mode's complete input and shared selections while switching forms.
-  const storageKey = `cattle-exit:${document.body.dataset.account}:${form.querySelector('[name=farm_context]').value}`;
+  const storageKey = `cattle-exit:${document.body.dataset.account}:${form.querySelector('[name=farm_context]').value}:${form.dataset.selectionKey}`;
   const mode = form.querySelector('input[name=mode]');
   if (mode) {
     let saved = {};
@@ -35,7 +35,7 @@ if (form) {
     const previous = {...(saved[mode.value] || {}), ...(saved.shared || {})};
     for (const field of form.elements) {
       if (field.tagName === 'BUTTON' || ['csrfmiddlewaretoken', 'farm_context', 'mode', 'task'].includes(field.name)) continue;
-      if (Object.hasOwn(previous, field.name)) {
+      if (field.type !== 'hidden' && !form.hasAttribute('data-form-errors') && Object.hasOwn(previous, field.name)) {
         if (field.multiple) for (const option of field.options) option.selected = previous[field.name].includes(option.value);
         else field.value = previous[field.name];
       }
@@ -45,7 +45,7 @@ if (form) {
     form.addEventListener('submit', () => {
       const values = {};
       for (const field of form.elements) {
-        if (!field.name || field.tagName === 'BUTTON' || ['csrfmiddlewaretoken','farm_context','mode','task'].includes(field.name)) continue;
+        if (!field.name || field.type === 'hidden' || field.tagName === 'BUTTON' || ['csrfmiddlewaretoken','farm_context','mode','task'].includes(field.name)) continue;
         values[field.name] = field.multiple ? Array.from(field.selectedOptions, o => o.value) : field.value;
       }
       saved[mode.value] = values; saved.shared = values;

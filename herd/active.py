@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
-from . import clock, reports
+from . import clock, reports, services
 from .context import scope
 from .home import months_after
 from .models import Animal
@@ -24,6 +24,11 @@ COLUMNS = [
 
 def active_table(request):
     user = request.user
+    selection_mode = request.GET.get("select", "")
+    if selection_mode not in {"exit", "bulk_edit"}:
+        selection_mode = ""
+    if selection_mode == "bulk_edit":
+        services.administrator(user)
     zone = ZoneInfo(user.property.timezone)
     today = datetime.fromtimestamp(clock.now(), zone).date()
     financials = {
@@ -82,6 +87,8 @@ def active_table(request):
         )
         row = dict(
             identity=a.pk,
+            selectable=bool(visit and visit.start <= clock.now() and any(t.current for t in tags)
+                            and len([p for p in a.presence.all() if p.end is None]) == 1),
             entry=entry,
             nlis=next((t.value for t in tags if t.current and t.kind == "nlis"), ""),
             rfid=next((t.value for t in tags if t.current and t.kind == "rfid"), ""),
@@ -120,6 +127,7 @@ def active_table(request):
             + urlencode(
                 dict(
                     q=request.GET.get("q", ""),
+                    select=selection_mode,
                     sort=key,
                     direction="asc"
                     if key == sort and descending
@@ -131,4 +139,4 @@ def active_table(request):
         )
         for key, label in COLUMNS
     ]
-    return {"rows": present + missing, "headings": headings}
+    return {"rows": present + missing, "headings": headings, "selection_mode": selection_mode}

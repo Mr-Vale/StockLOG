@@ -53,6 +53,16 @@ def client_for(user):
     return client, token
 
 
+def select_token(client, token, animals, operation="exit"):
+    route = "/workflow/exit/" if operation == "exit" else "/action/bulk_edit/"
+    response = client.post(route, {
+        "farm_context": token, "task": "select",
+        "selected_ids": [str(a.pk) for a in animals],
+    })
+    assert response.status_code == 200, response.content.decode()
+    return response.context["selection_token"]
+
+
 @pytest.mark.parametrize(
     "kind,value,want",
     [
@@ -235,7 +245,9 @@ def test_exit_preview_sale_exact_total_retries_and_stale(farm):
     with clock.at(T):
         x, y = animal(b, 1), animal(b, 2)
         client, token = client_for(b)
+        selection = select_token(client, token, [x, y])
         payload = dict(
+            selection_token=selection,
             farm_context=token,
             mode="sale",
             task="preview",
@@ -250,7 +262,7 @@ def test_exit_preview_sale_exact_total_retries_and_stale(farm):
         assert response.context["effects"]["count"] == 2
         assert Decimal(response.context["effects"]["revenue"]) == Decimal("100.01")
         signed = response.context["confirmation"]
-        final = dict(farm_context=token, mode="sale", confirmed_payload=signed)
+        final = dict(farm_context=token, selection_token=selection, mode="sale", confirmed_payload=signed)
         assert client.post("/workflow/exit/", final).status_code == 302
         assert client.post("/workflow/exit/", final).status_code == 302
         assert Allocation.objects.filter(category="sale").count() == 2
@@ -319,7 +331,9 @@ def test_exit_dst_backdating_restrictions_and_context(farm):
             timezone=a.property.timezone,
         )
         client, token = client_for(b)
+        selection = select_token(client, token, [x])
         data = dict(
+            selection_token=selection,
             farm_context=token,
             mode="sale",
             task="preview",
@@ -336,7 +350,7 @@ def test_exit_dst_backdating_restrictions_and_context(farm):
         response = client.post(
             "/workflow/exit/",
             dict(
-                farm_context=token, mode="sale", confirmed_payload=signed, accept_restriction="on"
+                farm_context=token, selection_token=selection, mode="sale", confirmed_payload=signed, accept_restriction="on"
             ),
         )
         assert "changed since preview" in response.context["error"]
@@ -359,7 +373,9 @@ def test_bulk_preview_membership_change_and_context_binding(farm):
         mob = run(b, "mob", {"name": "Sale mob"})["mob"]
         _x, y = animal(b, 1, mob=mob), animal(b, 2)
         client, token = client_for(b)
+        selection = select_token(client, token, [_x])
         data = dict(
+            selection_token=selection,
             farm_context=token,
             mode="sale",
             task="preview",
@@ -383,13 +399,15 @@ def test_bulk_preview_membership_change_and_context_binding(farm):
             },
         )
         response = client.post(
-            "/workflow/exit/", dict(farm_context=token, mode="sale", confirmed_payload=signed)
+            "/workflow/exit/", dict(farm_context=token, selection_token=selection, mode="sale", confirmed_payload=signed)
         )
         assert "changed since preview" in response.context["error"]
         assert Animal.objects.filter(status="active").count() == 2
         state = signing.loads(signed, salt="cattle:" + str(b.pk))
-        with pytest.raises(ValidationError, match="selection changed"):
-            run(b, "sale", state["data"])
+        # The chosen cohort is fixed even when another animal joins its former mob.
+        assert run(b, "sale", state["data"])["count"] == 1
+        y.refresh_from_db()
+        assert y.status == "active"
         session = client.session
         session["farm_generation"] = "changed"
         session.save()
@@ -397,7 +415,7 @@ def test_bulk_preview_membership_change_and_context_binding(farm):
         assert (
             client.post(
                 "/workflow/exit/",
-                dict(farm_context=new_token, mode="sale", confirmed_payload=signed),
+                dict(farm_context=new_token, selection_token=selection, mode="sale", confirmed_payload=signed),
             ).status_code
             == 403
         )
@@ -500,7 +518,7 @@ def test_bulk_and_edit_reversal_restore_history_finances_identifiers(farm):
         assert Identifier.objects.filter(value="0TEST001ABC99999", current=False).exists()
 
 
-def test_edit_preview_identifier_race_and_role_revocation(farm):
+def test_direct_edit_identifier_race_and_role_revocation(farm):
     _, a, b, _ = farm
     with clock.at(T):
         x = animal(b)
@@ -511,14 +529,10 @@ def test_edit_preview_identifier_race_and_role_revocation(farm):
         data.update(
             farm_context=token, task="preview", animal_reference=x.label, rfid="000000000000099"
         )
-        response = client.post("/action/edit_animal/", data)
-        signed = response.context["confirmation"]
+        # Another action fills the missing RFID before this direct save.
         run(a, "edit_animal", dict(animal=x.label, update_fields=["rfid"], rfid="000000000000098"))
-        response = client.post(
-            "/action/edit_animal/",
-            dict(farm_context=token, animal_reference=x.label, confirmed_payload=signed),
-        )
-        assert "changed since preview" in response.context["error"]
+        response = client.post("/action/edit_animal/", data)
+        assert response.status_code == 302
         assert x.identifiers.get(kind="rfid", current=True).value == "000000000000098"
         # Administrator access must be checked again from the saved account, not stale actor state.
         a.__class__.objects.filter(pk=a.pk).update(role="standard")

@@ -8,6 +8,7 @@ from django.core import signing
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError
 from django.shortcuts import redirect, render
+from django.urls import reverse
 
 from . import services
 from .cattle_services import (
@@ -22,7 +23,7 @@ from .context import scope
 from .entry import LABELS, EntryForm, today
 from .forms import ActionForm
 from .identifiers import configure, validate_identifier
-from .models import Animal
+from .models import Animal, Submission
 
 EXIT_MODES = {"sale": "Sale", "transfer": "Transfer", "death": "Death"}
 EDIT_ORDER = [
@@ -41,7 +42,7 @@ EDIT_ORDER = [
     "dob",
     "mother_nlis",
 ]
-INSTRUCTIONS = "Review and update the animal’s details below. Enter the farm entry date without a time. Select an existing breed/description or type a new one. If the date of birth is unknown, enter the animal’s estimated age in weeks when it entered the farm. A recorded date of birth takes priority when calculating age. Some identification and source fields require an administrator to change. Confirm the details, then save."
+INSTRUCTIONS = "Review and update the animal’s details below. Enter the farm entry date without a time. Select an existing breed/description or type a new one. If the date of birth is unknown, enter the animal’s estimated age in weeks when it entered the farm. A recorded date of birth takes priority when calculating age. Some identification and source fields require an administrator to change. Review the details, then save changes."
 
 
 def animal_choices(actor):
@@ -66,9 +67,10 @@ def selection_field(actor):
 
 
 class EditForm(EntryForm):
-    def __init__(self, actor, operation, animal=None, data=None, **kwargs):
+    def __init__(self, actor, operation, animal=None, data=None, selected=None, **kwargs):
         super().__init__(actor, "purchase", data, **kwargs)
         self.operation, self.animal = operation, animal
+        self.selected = selected
         # Birth exposes DOB and mother controls; source fields remain editable here.
         source = ActionForm(actor, "register")
         self.fields.update({k: source.fields[k] for k in ["dob", "mother_nlis"]})
@@ -146,7 +148,9 @@ class EditForm(EntryForm):
         if operation == "bulk_edit":
             self.fields = {k: f for k, f in self.fields.items() if k in BULK_FIELDS}
             fields = {}
-            fields["animals"] = selection_field(actor)
+            if selected is None:
+                fields["animals"] = selection_field(actor)
+            self.fields["mob"].label = "Mob"
             for k, field in self.fields.items():
                 fields["update_" + k] = forms.BooleanField(
                     required=False, label="Update " + field.label
@@ -164,11 +168,13 @@ class EditForm(EntryForm):
         d = forms.Form.clean(self)
         keys = [k for k in EDIT_ORDER if k in self.fields]
         if self.operation == "bulk_edit":
+            if self.selected is not None:
+                d["animals"] = [a.label for a in self.selected]
             keys = [k for k in keys if d.get("update_" + k)]
             if not keys:
                 self.add_error(None, "Select at least one field to update.")
             if not d.get("animals"):
-                self.add_error("animals", "Select at least one animal.")
+                self.add_error("animals" if "animals" in self.fields else None, "Select at least one animal.")
         for key, kind in [
             ("nlis", "nlis"),
             ("rfid", "rfid"),
@@ -199,9 +205,10 @@ class EditForm(EntryForm):
 
 
 class ExitForm(ActionForm):
-    def __init__(self, actor, mode, data=None, **kwargs):
+    def __init__(self, actor, mode, data=None, selected=None, **kwargs):
         super().__init__(actor, "sale", data, **kwargs)
         self.mode = mode
+        self.selected = selected
         self.fields["exit_date"] = forms.DateField(
             label="Farm Exit Date",
             initial=today(actor),
@@ -243,10 +250,14 @@ class ExitForm(ActionForm):
             self.fields["price"].required = True
         if mode == "death":
             keys = ["exit_date", "animals", "reason"]
+        if selected is not None:
+            keys = [k for k in keys if k not in {"mob", "animals"}]
         self.fields = {k: self.fields[k] for k in keys}
 
     def clean(self):
         d = forms.Form.clean(self)
+        if self.selected is not None:
+            d["animals"] = [a.label for a in self.selected]
         if not d.get("mob") and not d.get("animals"):
             self.add_error("animals", "Choose animals or a whole mob.")
         for key, kind in [("destination_pic", "pic"), ("nvd", "nvd")]:
@@ -287,27 +298,90 @@ def restriction_warnings(actor, data):
     return warnings
 
 
-def workflow(request, operation, animal=None):
+def edit_page(request, animal):
+    """Individual edits validate and commit through the existing audit service."""
+    from .animal_details import summary
+
     actor = request.user
+    try:
+        form = EditForm(actor, "edit_animal", animal, request.POST if request.method == "POST" else None)
+    except ValidationError as exc:
+        messages.error(request, "; ".join(exc.messages))
+        return redirect("animals")
+    ctx = {
+        "form": form, "operation": "edit_animal", "instructions": INSTRUCTIONS,
+        "source": f"{actor.property.name} — PIC {actor.pic.number}",
+        "animal_reference": animal.label,
+        "submission_key": request.POST.get("submission_key") or uuid.uuid4().hex,
+        "breeds": Animal.objects.filter(property=actor.property).exclude(breed="").values_list("breed", flat=True).distinct(),
+    }
+    if request.method == "POST":
+        if request.POST.get("confirmed_payload"):
+            ctx["error"] = "Individual edits now save directly. Review the form and choose Save changes."
+        elif form.is_valid():
+            try:
+                services.execute(actor, ctx["submission_key"], "edit_animal", services.clean(form.cleaned_data))
+                messages.success(request, "Animal changes saved.")
+                return redirect("animal", pk=animal.pk)
+            except (ValidationError, IntegrityError, ValueError, KeyError) as exc:
+                form.add_error(None, "; ".join(getattr(exc, "messages", [str(exc)])))
+    ctx.update(summary(actor, animal))
+    return render(request, "herd/animal.html", ctx)
+
+
+def workflow(request, operation, animal=None):
+    from .cattle_selection import create_selection, read_selection
+
+    actor = request.user
+    if operation == "edit_animal":
+        if animal is None:
+            reference = request.POST.get("animal_reference") or request.GET.get("animal")
+            if not reference:
+                return redirect("animals")
+            try:
+                animal = services.find_animal(actor, reference)
+            except ValidationError:
+                from django.http import Http404
+
+                raise Http404("Animal is unavailable on this PIC.")
+            if request.method == "GET":
+                return redirect("animal", pk=animal.pk)
+        return edit_page(request, animal)
+
     is_exit = operation in EXIT_MODES
     if operation == "bulk_edit":
         services.administrator(actor)
-    reference = (
-        animal.label
-        if animal
-        else request.POST.get("animal_reference") or request.GET.get("animal")
-    )
-    if operation == "edit_animal" and animal is None:
-        if not reference:
-            return redirect("animals")
+    purpose = "exit" if is_exit else "bulk_edit"
+    # A confirmed retry of an already committed event must not fail because the
+    # original save itself closed the animals' presence. execute still rechecks
+    # account/context and the exact submission digest under the property lock.
+    if request.POST.get("confirmed_payload"):
         try:
-            animal = services.find_animal(actor, reference)
-        except ValidationError:
-            from django.http import Http404
+            committed = signing.loads(request.POST["confirmed_payload"], salt="cattle:" + str(actor.pk), max_age=1800)
+            expected_operation = request.POST.get("mode", operation) if is_exit else operation
+            if committed["context"] != request.farm_context or committed["operation"] != expected_operation:
+                raise PermissionDenied("Property/PIC or operation changed. Refresh preview.")
+            if Submission.objects.filter(property=actor.property, actor=actor, key=committed["key"]).exists():
+                services.execute(actor, committed["key"], expected_operation, committed["data"], committed["version"])
+                messages.success(request, "Saved and confirmed.")
+                return redirect("animals")
+        except (signing.BadSignature, KeyError):
+            pass
+    token = request.POST.get("selection_token") or request.GET.get("selection_token")
+    if not token and request.method == "GET":
+        return redirect(reverse("animals") + "?select=" + purpose)
+    try:
+        if request.method == "POST" and request.POST.get("task") == "select":
+            token = create_selection(request, purpose, request.POST.getlist("selected_ids"))
+        if not token:
+            raise ValidationError("Select cattle from Active Cattle before continuing.")
+        selection, selected = read_selection(request, purpose, token)
+    except (ValidationError, signing.BadSignature, ValueError, KeyError, TypeError) as exc:
+        return render(request, "herd/selection_error.html", {
+            "error": "; ".join(getattr(exc, "messages", ["Selection is invalid or expired. Select cattle again."])),
+            "purpose": purpose,
+        }, status=400)
 
-            raise Http404("Animal is unavailable on this PIC.")
-        if request.method == "GET":
-            return redirect("animal", pk=animal.pk)
     initial = {}
     if is_exit:
         operation = request.POST.get("switch_mode") or request.POST.get("mode", operation)
@@ -318,32 +392,24 @@ def workflow(request, operation, animal=None):
 
     def make_form(data=None, initial=None):
         if is_exit:
-            return ExitForm(actor, operation, data, initial=initial or {})
-        return EditForm(actor, operation, animal, data, initial=initial or {})
+            return ExitForm(actor, operation, data, selected=selected, initial=initial or {})
+        return EditForm(actor, operation, data=data, selected=selected, initial=initial or {})
 
-    try:
-        form = make_form(
-            request.POST
-            if request.method == "POST" and not request.POST.get("confirmed_payload")
-            else None
-        )
-    except ValidationError as exc:
-        messages.error(request, "; ".join(exc.messages))
-        return redirect("animals")
-    ctx = dict(
-        form=form,
-        operation=operation,
-        title="Cattle Exit"
-        if is_exit
-        else "Bulk Edit"
-        if operation == "bulk_edit"
-        else "Edit Animal",
-        modes=EXIT_MODES.items() if is_exit else [],
-        animal_reference=reference or "",
-        instructions=INSTRUCTIONS if animal else "",
-        breeds=Animal.objects.filter(property=actor.property).exclude(breed="").values_list("breed", flat=True).distinct(),
-        source=f"{actor.property.name} — PIC {actor.pic.number}",
+    form = make_form(
+        request.POST if request.method == "POST"
+        and request.POST.get("task") not in {"select", "entry"}
+        and not request.POST.get("confirmed_payload") else None
     )
+    ctx = {
+        "form": form, "operation": operation,
+        "title": "Cattle Exit" if is_exit else "Bulk Edit",
+        "modes": EXIT_MODES.items() if is_exit else [],
+        "selected_animals": selected, "selection_token": token,
+        "selection_key": selection["key"],
+        "form_action": reverse("workflow", args=["exit"]) if is_exit else reverse("action", args=["bulk_edit"]),
+        "breeds": Animal.objects.filter(property=actor.property).exclude(breed="").values_list("breed", flat=True).distinct(),
+        "source": f"{actor.property.name} — PIC {actor.pic.number}",
+    }
     salt = "cattle:" + str(actor.pk)
     try:
         if request.method == "POST" and request.POST.get("confirmed_payload"):
@@ -351,69 +417,49 @@ def workflow(request, operation, animal=None):
             if state["context"] != request.farm_context or state["operation"] != operation:
                 raise PermissionDenied("Property/PIC or operation changed. Refresh preview.")
             initial = state["data"]
-            if animal and initial.get("animal") != animal.label:
-                raise ValidationError("Animal changed. Refresh preview.")
-            # The transaction version binds the exact selection and restrictions.
+            if initial.get("selected_ids") != selection["ids"] or initial.get("selected_presence_ids") != selection["presence_ids"]:
+                raise ValidationError("Animal selection changed. Refresh preview.")
             if state.get("warnings") and not request.POST.get("accept_restriction"):
-                raise ValidationError(
-                    "Explicit acceptance of the displayed withholding warning is required."
-                )
-            result = services.execute(
-                actor, state["key"], operation, state["data"], state["version"]
-            )
+                raise ValidationError("Explicit acceptance of the displayed withholding warning is required.")
+            result = services.execute(actor, state["key"], operation, initial, state["version"])
             messages.success(request, f"Saved {result.get('count', 1)} animal(s).")
-            if animal:
-                return redirect("animal", pk=animal.pk)
             return redirect("animals")
         if request.method == "POST" and request.POST.get("task") == "preview" and form.is_valid():
-            data = services.clean(form.cleaned_data)
+            data = services.clean({
+                **form.cleaned_data, "selected_ids": selection["ids"],
+                "selected_presence_ids": selection["presence_ids"],
+            })
             warnings = restriction_warnings(actor, data) if operation in {"sale", "death"} else []
-            # Preview may simulate the existing explicit restriction acceptance; final confirmation
-            # requires the user to actively accept the warnings shown, with the same version.
             if warnings:
                 data["accept_restriction"] = True
             reviewed = services.preview(actor, operation, data)
             if is_exit:
                 data["preview_animals"] = reviewed["effects"]["animals"]
-            state = dict(
-                context=request.farm_context,
-                operation=operation,
-                key=uuid.uuid4().hex,
-                data=data,
-                version=reviewed["version"],
-                warnings=warnings,
-            )
+            state = {
+                "context": request.farm_context, "operation": operation,
+                "key": uuid.uuid4().hex, "data": data, "version": reviewed["version"],
+                "warnings": warnings,
+            }
             ctx.update(
                 confirmation=signing.dumps(state, salt=salt, compress=True),
-                effects=reviewed["effects"],
-                warnings=warnings,
+                effects=reviewed["effects"], warnings=warnings,
                 details=[
-                    (
-                        field.label,
-                        (
-                            ("Not supplied" if is_exit else "Clear / Unknown")
-                            if data[k] in [None, ""]
-                            else dict(field.choices).get(str(data[k]), data[k])
-                            if isinstance(field, forms.ChoiceField)
-                            else data[k]
-                        ),
-                    )
-                    for k, field in form.fields.items()
-                    if k in data and k != "animals"
+                    (field.label, ("Not supplied" if is_exit else "Clear / Unknown")
+                     if data[k] in [None, ""]
+                     else dict(field.choices).get(str(data[k]), data[k])
+                     if isinstance(field, forms.ChoiceField) else data[k])
+                    for k, field in form.fields.items() if k in data and k != "animals"
                 ],
             )
     except (ValidationError, signing.BadSignature, IntegrityError, ValueError, KeyError) as exc:
         ctx["error"] = "; ".join(getattr(exc, "messages", [str(exc)]))
         if initial:
             if operation == "bulk_edit":
-                initial = {
-                    **initial,
-                    **{"update_" + k: True for k in initial.get("update_fields", [])},
-                }
+                initial = {**initial, **{"update_" + k: True for k in initial.get("update_fields", [])}}
             ctx["form"] = make_form(data=initial)
-    if animal:
-        from .animal_details import summary
-
-        ctx.update(summary(actor, animal))
-        return render(request, "herd/animal.html", ctx)
+    if operation == "bulk_edit":
+        ctx["bulk_fields"] = [
+            (ctx["form"]["update_" + key], ctx["form"][key])
+            for key in EDIT_ORDER if key in BULK_FIELDS
+        ]
     return render(request, "herd/cattle.html", ctx)
