@@ -27,7 +27,8 @@ def test_entry_buttons_bulk_alignment_and_both_exit_entry_points(farm, live_serv
     OUT.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as p:
         engine = browser(p)
-        page = engine.new_page(viewport={"width": 1440, "height": 1000}, locale="en-AU")
+        context = engine.new_context(viewport={"width": 1440, "height": 1000}, locale="en-AU")
+        page = context.new_page()
         sign_in(page, live_server.url, "A")
         page.get_by_role("link", name="Cattle Entry", exact=True).click()
         page.locator("[name=nlis]").fill("0TEST001ABC00009")

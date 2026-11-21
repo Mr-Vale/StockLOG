@@ -13,7 +13,7 @@
 <form method="post" action="{{ form_action }}">{% csrf_token %}<input type="hidden" name="farm_context" value="{{ request.farm_context }}"><input type="hidden" name="selection_token" value="{{ selection_token }}"><input type="hidden" name="mode" value="{{ operation }}"><button name="task" value="entry">Return to form</button></form>
 {% else %}
 {% if selected_animals %}<h2>Selected animals ({{ selected_animals|length }})</h2><ul class="selected-animals">{% for selected in selected_animals %}<li>{{ selected.label }}</li>{% endfor %}</ul>{% endif %}
-<form method="post" {% if form_action %}action="{{ form_action }}"{% endif %} class="entry-form" data-cattle-form data-selection-key="{{ selection_key }}" {% if form.errors or error %}data-form-errors{% endif %}>
+<form method="post" {% if form_action %}action="{{ form_action }}"{% endif %} class="entry-form" data-cattle-form data-selection-key="{{ selection_key }}" {% if error %}data-form-errors{% elif request.POST.task == 'preview' and form.errors %}data-form-errors{% endif %}>
 {% csrf_token %}<input type="hidden" name="farm_context" value="{{ request.farm_context }}"><input type="hidden" name="animal_reference" value="{{ animal_reference }}"><input type="hidden" name="submission_key" value="{{ submission_key }}"><input type="hidden" name="selection_token" value="{{ selection_token }}">
 {% if modes %}<div class="entry-modes">{% for value,label in modes %}<button type="submit" name="switch_mode" value="{{ value }}" formnovalidate {% if operation == value %}aria-current="true"{% endif %}>{{ label }}</button>{% endfor %}</div><input type="hidden" name="mode" value="{{ operation }}"><h2>{{ operation|title }}</h2>{% endif %}
 {{ form.non_field_errors }}
