@@ -43,7 +43,7 @@ def test_selection_exactness_mob_assignment_and_unchecked_preservation(farm):
             "farm_context": token, "task": "select", "selected_ids": [str(x.pk), str(y.pk)],
         })
         assert selected.status_code == 200
-        assert [a.pk for a in selected.context["selected_animals"]] == sorted([x.pk, y.pk])
+        assert {a.pk for a in selected.context["selected_animals"]} == {x.pk, y.pk}
         assert "animals" not in selected.context["form"].fields
         assert selected.context["form"].fields["mob"].label == "Mob"
         selection = selected.context["selection_token"]
