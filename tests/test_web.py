@@ -52,7 +52,7 @@ def test_auth_csrf_roles_and_all_workflow_pages(farm):
         "reverse",
         "template",
     ]:
-        assert client.get("/action/" + operation + "/").status_code == (302 if operation == "edit_animal" else 200)
+        assert client.get("/action/" + operation + "/").status_code == (302 if operation in {"edit_animal", "sale", "death"} else 200)
     assert (
         client.get("/accounts/").status_code == 403
         and client.get("/action/purge/").status_code == 403

@@ -27,7 +27,7 @@ EDIT_FIELDS = {
     "dob",
     "mother_nlis",
 }
-BULK_FIELDS = {"entry_date", "breed", "sex", "purchase_cost", "vendor_name", "vendor_address"}
+BULK_FIELDS = {"entry_date", "breed", "sex", "purchase_cost", "vendor_name", "vendor_address", "mob"}
 
 
 def calendar_date(actor, timestamp):
@@ -268,7 +268,9 @@ def bulk_edit(actor, event, data):
     fields = set(data.get("update_fields", []))
     if not fields or not fields <= BULK_FIELDS:
         raise ValidationError("Choose supported fields to update.")
-    animals = s.targets(actor, data, event.effective_at, event.effective_order)
+    from .cattle_selection import targets
+
+    animals = targets(actor, event, data, assignment="mob" in fields)
     if not animals:
         raise ValidationError("Select at least one animal.")
     for a in animals:
@@ -281,7 +283,9 @@ def exit_animals(actor, event, data):
         at = exit_timestamp(actor, data["exit_date"], data.get("effective_at"))
         if at != event.effective_at:
             raise ValidationError("Exit date does not match the prepared event.")
-    animals = s.targets(actor, data, event.effective_at, event.effective_order)
+    from .cattle_selection import targets
+
+    animals = targets(actor, event, data)
     for a in animals:
         visit = current_visit(a, actor)
         if visit.start > event.effective_at:

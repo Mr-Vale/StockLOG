@@ -7,13 +7,20 @@
 <h3>Selected animals ({{ effects.count }})</h3><ul class="selected-animals">{% for label in effects.animal_labels %}<li>{{ label }}</li>{% endfor %}</ul>
 {% if operation == 'sale' %}<p>Sale total: ${{ effects.revenue }} AUD</p>{% endif %}
 {% for warning in warnings %}<p role="alert">{{ warning.animal }}: Farm Exit Date is before safe sale date {{ warning.safe_date }}.</p>{% endfor %}
-<form method="post">{% csrf_token %}<input type="hidden" name="farm_context" value="{{ request.farm_context }}"><input type="hidden" name="mode" value="{{ operation }}"><input type="hidden" name="animal_reference" value="{{ animal_reference }}"><input type="hidden" name="confirmed_payload" value="{{ confirmation }}">
+<form method="post" action="{{ form_action }}">{% csrf_token %}<input type="hidden" name="farm_context" value="{{ request.farm_context }}"><input type="hidden" name="mode" value="{{ operation }}"><input type="hidden" name="selection_token" value="{{ selection_token }}"><input type="hidden" name="confirmed_payload" value="{{ confirmation }}">
 {% if warnings %}<label><input type="checkbox" name="accept_restriction" required> I explicitly accept the displayed withholding restrictions under the existing departure rules.</label>{% endif %}
-<button {% if animal %}class="primary-action"{% endif %}>Confirm and save</button></form><a href="">Return to form</a>
+<button>Confirm and save</button></form>
+<form method="post" action="{{ form_action }}">{% csrf_token %}<input type="hidden" name="farm_context" value="{{ request.farm_context }}"><input type="hidden" name="selection_token" value="{{ selection_token }}"><input type="hidden" name="mode" value="{{ operation }}"><button name="task" value="entry">Return to form</button></form>
 {% else %}
-<form method="post" class="entry-form" data-cattle-form>{% csrf_token %}<input type="hidden" name="farm_context" value="{{ request.farm_context }}"><input type="hidden" name="animal_reference" value="{{ animal_reference }}">
+{% if selected_animals %}<h2>Selected animals ({{ selected_animals|length }})</h2><ul class="selected-animals">{% for selected in selected_animals %}<li>{{ selected.label }}</li>{% endfor %}</ul>{% endif %}
+<form method="post" {% if form_action %}action="{{ form_action }}"{% endif %} class="entry-form" data-cattle-form data-selection-key="{{ selection_key }}" {% if form.errors or error %}data-form-errors{% endif %}>
+{% csrf_token %}<input type="hidden" name="farm_context" value="{{ request.farm_context }}"><input type="hidden" name="animal_reference" value="{{ animal_reference }}"><input type="hidden" name="submission_key" value="{{ submission_key }}"><input type="hidden" name="selection_token" value="{{ selection_token }}">
 {% if modes %}<div class="entry-modes">{% for value,label in modes %}<button type="submit" name="switch_mode" value="{{ value }}" formnovalidate {% if operation == value %}aria-current="true"{% endif %}>{{ label }}</button>{% endfor %}</div><input type="hidden" name="mode" value="{{ operation }}"><h2>{{ operation|title }}</h2>{% endif %}
-{{ form.non_field_errors }}<div class="entry-fields">{% for field in form %}<div {% if field.name == 'animals' %}class="animal-picker"{% endif %}>{{ field.label_tag }}{{ field }}{{ field.errors }}{% if field.help_text %}<span class="helptext">{{ field.help_text }}</span>{% endif %}</div>{% endfor %}</div>
+{{ form.non_field_errors }}
+<div class="entry-fields">
+{% if operation == 'bulk_edit' %}{% for toggle,field in bulk_fields %}<div class="bulk-field"><div class="update-choice">{{ toggle }}{{ toggle.label_tag }}{{ toggle.errors }}</div>{{ field.label_tag }}{{ field }}{{ field.errors }}{% if field.help_text %}<span class="helptext">{{ field.help_text }}</span>{% endif %}</div>{% endfor %}
+{% else %}{% for field in form %}<div>{{ field.label_tag }}{{ field }}{{ field.errors }}{% if field.help_text %}<span class="helptext">{{ field.help_text }}</span>{% endif %}</div>{% endfor %}{% endif %}
+</div>
 <datalist id="breed-options">{% for breed in breeds %}<option value="{{ breed }}">{% endfor %}</datalist>
-<button {% if animal %}class="primary-action"{% endif %} name="task" value="preview">Preview changes</button></form>
+{% if animal %}<button class="primary-action" name="task" value="save">Save changes</button>{% else %}<button name="task" value="preview">Preview changes</button>{% endif %}</form>
 {% endif %}<script src="{% static 'herd/cattle.js' %}" defer></script>

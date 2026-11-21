@@ -232,7 +232,7 @@ def entry(request):
                 f"Saved {result['count']} animals to {actor.property.name} — PIC {actor.pic.number}.",
             )
             return render(
-                request, "herd/saved.html", {"result": result, "submission_key": state["key"]}
+                request, "herd/saved.html", {"result": result, "submission_key": state["key"], "entry_saved": True}
             )
     except (ValidationError, ValueError, IndexError, KeyError, IntegrityError) as exc:
         error = (

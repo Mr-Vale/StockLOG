@@ -1,0 +1,4 @@
+{% extends 'herd/base.html' %}{% block content %}
+<h1>Select cattle again</h1><p role="alert">{{ error }}</p>
+<a class="primary-action" href="{% url 'animals' %}?select={{ purpose }}">Return to Active Cattle</a>
+{% endblock %}

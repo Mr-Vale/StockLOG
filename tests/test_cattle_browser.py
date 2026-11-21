@@ -13,6 +13,13 @@ from tests.test_browser import browser, db_query, sign_in
 OUT = Path(__file__).resolve().parents[1] / "docs/testing/cattle-changes-screenshots"
 
 
+def choose(page, base, mode):
+    page.goto(base + "/animals/?select=" + mode)
+    for checkbox in page.locator("input[name=selected_ids]:enabled").all():
+        checkbox.check()
+    page.get_by_role("button", name="Next", exact=True).click()
+
+
 @pytest.mark.django_db(transaction=True)
 def test_cattle_forms_and_evidence(farm, live_server):
     p, admin, b, _ = farm
@@ -47,21 +54,23 @@ def test_cattle_forms_and_evidence(farm, live_server):
                 ("/action/bulk_edit/", "bulk-edit"),
                 ("/action/edit_animal/?animal=0TEST001ABC00001", "edit-animal"),
             ]:
-                page.goto(live_server.url + route)
+                if name == "bulk-edit":
+                    choose(page, live_server.url, "bulk_edit")
+                else:
+                    page.goto(live_server.url + route)
                 expect(page.locator("h1")).to_be_visible()
                 if name == "active" and width == 1440:
                     assert page.locator("main").bounding_box()["x"] == 185
                 page.screenshot(path=str(OUT / f"{label}-{name}.png"), full_page=True)
                 assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
-            page.goto(live_server.url + "/workflow/exit/")
+            choose(page, live_server.url, "exit")
             for mode in ["Sale", "Transfer", "Death"]:
                 page.get_by_role("button", name=mode, exact=True).click()
                 expect(page.get_by_role("heading", name=mode, exact=True)).to_be_visible()
                 page.screenshot(path=str(OUT / f"{label}-exit-{mode.lower()}.png"), full_page=True)
                 assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         page.set_viewport_size({"width": 1440, "height": 1000})
-        page.goto(live_server.url + "/action/bulk_edit/")
-        page.locator("[name=animals]").select_option(["0TEST001ABC00001", "0TEST001ABC00002"])
+        choose(page, live_server.url, "bulk_edit")
         page.locator("[name=update_breed]").check()
         page.locator("[name=breed]").fill("Hereford")
         page.get_by_role("button", name="Preview changes").click()
@@ -69,12 +78,11 @@ def test_cattle_forms_and_evidence(farm, live_server):
         page.get_by_role("button", name="Confirm and save").click()
         expect(page.get_by_role("heading", name="Active Cattle")).to_be_visible()
         assert db_query(lambda: Animal.objects.filter(breed="Hereford").count()) == 2
-        page.goto(live_server.url + "/workflow/exit/")
+        choose(page, live_server.url, "exit")
         page.locator("[name=destination_pic]").fill("0DEST001")
         page.locator("[name=nvd]").fill("00000001")
         page.locator("[name=price]").fill("100.01")
         page.locator("[name=price_mode]").select_option("group")
-        page.locator("[name=animals]").select_option(["0TEST001ABC00001", "0TEST001ABC00002"])
         expect(page.locator(".selected-animals li")).to_have_count(2)
         page.get_by_role("button", name="Transfer", exact=True).click()
         expect(page.locator("[name=destination_pic]")).to_have_value("0DEST001")

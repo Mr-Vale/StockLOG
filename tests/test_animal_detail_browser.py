@@ -66,13 +66,13 @@ def test_combined_summary_edit_actions_and_history(farm, live_server, tmp_path):
         page.locator("[name=vendor_name]").fill("Pending source")
         page.locator("[name=entry_date]").fill("")
         page.locator("[data-cattle-form]").evaluate("form => form.noValidate = true")
-        page.get_by_role("button", name="Preview changes").click()
+        page.get_by_role("button", name="Save changes").click()
         expect(edit).to_have_attribute("open", "")
         expect(page.locator(".errorlist").first).to_be_visible()
         expect(page.locator("[name=vendor_name]")).to_have_value("Pending source")
         page.locator("[name=entry_date]").fill(entry_date)
         for target in [
-            page.get_by_role("button", name="Preview changes"),
+            page.get_by_role("button", name="Save changes"),
             page.get_by_role("link", name="View lifetime history"),
         ]:
             page.locator("h1").click()
@@ -85,22 +85,19 @@ def test_combined_summary_edit_actions_and_history(farm, live_server, tmp_path):
             page.keyboard.press("Tab")
             page.keyboard.press("Shift+Tab")
             assert button_style(target) == focus
+        expect(page.get_by_role("button", name="Preview changes")).to_have_count(0)
         page.locator("[name=vendor_name]").fill("Completed source")
-        page.get_by_role("button", name="Preview changes").click()
-        expect(page.get_by_role("button", name="Confirm and save")).to_be_visible()
-        expect(edit).to_have_attribute("open", "")
-        assert db_query(lambda: Event.objects.filter(kind="edit_animal").count()) == 0
-        page.get_by_role("button", name="Confirm and save").click()
+        page.get_by_role("button", name="Save changes").click()
         expect(page).to_have_url(live_server.url + url(x))
         expect(summary.get_by_text("Completed source", exact=True)).to_be_visible()
         assert db_query(lambda: Audit.objects.filter(action="edit_animal").count()) == 1
         for width in [1440, 390]:
             page.set_viewport_size({"width": width, "height": 1000})
             expect(edit).not_to_have_attribute("open", "")
-            expect(page.get_by_role("button", name="Preview changes")).to_be_hidden()
+            expect(page.get_by_role("button", name="Save changes")).to_be_hidden()
             check_layout(page, width, active=True)
             edit.locator("summary").click()
-            expect(page.get_by_role("button", name="Preview changes")).to_be_visible()
+            expect(page.get_by_role("button", name="Save changes")).to_be_visible()
             edit.locator("summary").click()
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
             page.screenshot(path=str(tmp_path / f"animal-detail-{width}.png"), full_page=True)
@@ -121,7 +118,7 @@ def test_combined_summary_edit_actions_and_history(farm, live_server, tmp_path):
         expect(summary.get_by_text("Deactive", exact=True)).to_be_visible()
         expect(summary.get_by_text("0.00 AUD", exact=True)).to_have_count(2)
         expect(summary.get_by_text("Sale price", exact=True)).to_be_visible()
-        expect(page.get_by_role("button", name="Preview changes")).to_have_count(0)
+        expect(page.get_by_role("button", name="Save changes")).to_have_count(0)
         for width in [1440, 390]:
             page.set_viewport_size({"width": width, "height": 1000})
             check_layout(page, width, active=False)

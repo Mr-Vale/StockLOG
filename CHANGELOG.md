@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.0
+
+Select cattle on Active Cattle before Bulk Edit or Cattle Exit. Carry an exact,
+context-bound selection into the form and recheck eligibility when saving.
+Bulk Edit now supports Update Mob, with each Update control grouped with its
+field. Bulk and exit previews, restriction warnings and confirmations remain.
+
+Individual animal edits save directly with existing validation, field permissions
+and audit logging. Cattle entry confirmation links use matching dark green
+buttons and include Return to Active Cattle.
+
+Compatible feature release from 0.2.4; no schema, dependency or service changes,
+and no reinstall required.
+
 ## 0.2.4
 
 Refine the combined animal detail page with labelled NLIS identifiers, actions
