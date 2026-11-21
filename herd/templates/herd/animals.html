@@ -4,9 +4,9 @@
 <form method="post" {% if selection_mode == 'bulk_edit' %}action="{% url 'action' 'bulk_edit' %}"{% else %}action="{% url 'workflow' 'exit' %}"{% endif %} {% if selection_mode %}data-cattle-selection{% endif %}>
 {% csrf_token %}<input type="hidden" name="farm_context" value="{{ request.farm_context }}">
 <div class="controls cattle-actions">
-<a class="button" {% if selection_mode %}aria-disabled="true" tabindex="-1"{% else %}href="{% url 'workflow' 'entry' %}"{% endif %}>Cattle Entry</a>
-{% if selection_mode == 'exit' %}<button name="task" value="select" disabled data-selection-next>Next</button>{% else %}<a class="button" {% if selection_mode %}aria-disabled="true" tabindex="-1"{% else %}href="{% url 'animals' %}?select=exit"{% endif %}>Cattle Exit</a>{% endif %}
-{% if user.administrator %}{% if selection_mode == 'bulk_edit' %}<button name="task" value="select" disabled data-selection-next>Next</button>{% else %}<a class="button" {% if selection_mode %}aria-disabled="true" tabindex="-1"{% else %}href="{% url 'animals' %}?select=bulk_edit"{% endif %}>Bulk Edit</a>{% endif %}{% endif %}
+<a class="button" role="link" {% if selection_mode %}aria-disabled="true" tabindex="-1"{% else %}href="{% url 'workflow' 'entry' %}"{% endif %}>Cattle Entry</a>
+{% if selection_mode == 'exit' %}<button name="task" value="select" disabled data-selection-next>Next</button>{% else %}<a class="button" role="link" {% if selection_mode %}aria-disabled="true" tabindex="-1"{% else %}href="{% url 'animals' %}?select=exit"{% endif %}>Cattle Exit</a>{% endif %}
+{% if user.administrator %}{% if selection_mode == 'bulk_edit' %}<button name="task" value="select" disabled data-selection-next>Next</button>{% else %}<a class="button" role="link" {% if selection_mode %}aria-disabled="true" tabindex="-1"{% else %}href="{% url 'animals' %}?select=bulk_edit"{% endif %}>Bulk Edit</a>{% endif %}{% endif %}
 {% if selection_mode %}<a href="{% url 'animals' %}">Cancel selection</a>{% endif %}
 </div>
 {% if selection_mode %}<p>Select cattle for {% if selection_mode == 'exit' %}Cattle Exit{% else %}Bulk Edit{% endif %}, then choose Next.</p><p data-selection-count role="status">0 selected</p>{% endif %}
