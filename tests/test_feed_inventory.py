@@ -194,7 +194,9 @@ def test_currency_ui_labels_and_reports_use_symbols(farm):
         assert "$" in FeedEntryForm(b).fields["package_price"].label
         assert "$" in ActionForm(b, "receipt").fields["package_price"].label
         assert "AUD" not in reports.build(b, {"dataset": "inventory"})["note"]
-        assert financial_tree({"cost": Decimal("12.345")}) == {"cost": "$12.35"}
+        assert financial_tree({"cost": Decimal("12.345")}) == {"cost": "$12.345"}
+        stock(b, kind="chemical", stock_unit="L", package_size=20, package_price=250, dose_unit="mL")
+        assert "$0.012500000000 / mL" in client.get("/inventory/chemical/").content.decode()
 
 
 def test_selection_tokens_bind_context_actor_and_action(farm):

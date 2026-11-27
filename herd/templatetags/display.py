@@ -50,7 +50,7 @@ def financial_value(value, key):
         from decimal import Decimal, InvalidOperation
         try:
             if Decimal(str(value)).is_finite():
-                return money(value)
+                return "$" + str(value)
         except (InvalidOperation, ValueError, TypeError):
             pass
     return value
