@@ -75,6 +75,7 @@ def test_exact_selected_edits_previews_stale_retry_and_removal(farm):
         ids = [add(b, name=name)["item"] for name in ["One", "Two", "Untouched"]]
         client, context = client_for(b)
         assert selected(client, context, []).status_code == 400
+        assert selected(client, context, [], "retire").status_code == 400
         assert selected(client, context, [ids[0], ids[0]]).status_code == 400
         page = selected(client, context, ids[:2])
         assert [i.pk for i in page.context["selected_items"]] == ids[:2]
@@ -194,3 +195,23 @@ def test_currency_ui_labels_and_reports_use_symbols(farm):
         assert "$" in ActionForm(b, "receipt").fields["package_price"].label
         assert "AUD" not in reports.build(b, {"dataset": "inventory"})["note"]
         assert financial_tree({"cost": Decimal("12.345")}) == {"cost": "$12.35"}
+
+
+def test_selection_tokens_bind_context_actor_and_action(farm):
+    _, admin, b, c = farm
+    with clock.at(T):
+        identity = add(b)["item"]
+        client, context = client_for(b)
+        page = selected(client, context, [identity])
+        token = page.context["selection_token"]
+        forged = {"farm_context": context, "selection_token": token, "task": "preview",
+            str(identity) + "_actual": "1", str(identity) + "_reason": "Counted"}
+        assert client.post("/inventory/feed/retire/", forged).status_code == 403
+        other, other_context = client_for(c)
+        assert other.post("/inventory/feed/stocktake/", {**forged, "farm_context": other_context}).status_code == 400
+        session = client.session
+        session["farm_generation"] = "changed"
+        session.save()
+        new_context = client.get("/").wsgi_request.farm_context
+        assert client.post("/inventory/feed/stocktake/", {**forged, "farm_context": new_context}).status_code == 403
+        assert Inventory.objects.get(pk=identity).balance == 35000

@@ -58,6 +58,8 @@ def table(request, items):
             return v, row["batch"].casefold()
         return v.casefold() if isinstance(v, str) else v
     present.sort(key=value, reverse=descending)
+    if key == "date":
+        missing.sort(key=lambda row: row["batch"].casefold(), reverse=descending)
     headings = []
     for column, label in COLUMNS:
         params = [
