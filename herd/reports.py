@@ -541,7 +541,7 @@ def build(actor, definition):
         "generated_at": clock.now(),
         "display_timezone": actor.display_timezone,
         "display_format": actor.date_format,
-        "note": "$. Date/attribute filters select animals; their finances always cover the full lifetime. Unknown purchase prices make P/L incomplete. Active animals show costs/revenue to date, not a final sale outcome. Export dates use your display timezone. Property timezone "
+        "note": "Monetary amounts use $. Date/attribute filters select animals; their finances always cover the full lifetime. Unknown purchase prices make P/L incomplete. Active animals show costs/revenue to date, not a final sale outcome. Export dates use your display timezone. Property timezone "
         + actor.property.timezone
         + "; selected PIC "
         + actor.pic.number

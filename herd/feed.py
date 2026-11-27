@@ -364,6 +364,7 @@ def reviewed_workflow(request, operation, form_class, title):
             ctx.update(
                 confirmation=signing.dumps(state, salt=salt, compress=True),
                 details=details, preview_rows=preview_rows(form, details), effects=reviewed["effects"],
+                preview_mob=dict(details).get("Mob"), preview_feed=dict(details).get("Feed"),
                 negative_balance=operation == "feed" and Decimal(str(reviewed["effects"]["balance"])) < 0,
             )
     except (ValidationError, signing.BadSignature, IntegrityError, ValueError, KeyError) as exc:

@@ -19,7 +19,7 @@ def user_time(value, user):
 # Display rounding never changes the Decimal values passed to domain services.
 @register.filter
 def compact(value):
-    from decimal import Decimal, InvalidOperation, ROUND_HALF_UP, localcontext
+    from decimal import ROUND_HALF_UP, Decimal, InvalidOperation, localcontext
     if value is None or value == "":
         return "Not recorded"
     try:
