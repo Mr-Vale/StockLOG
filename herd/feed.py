@@ -68,7 +68,7 @@ def available(actor):
 
 
 class FeedEntryForm(forms.Form):
-    stored_date = forms.DateField(label="Date Stored", widget=forms.DateInput(attrs={"type": "date"}))
+    stored_date = forms.DateField(label="Date Stored", widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"))
     name = forms.CharField(label="Product Name", max_length=120)
     feed_type = forms.ChoiceField(label="Feed Type")
     packages = forms.DecimalField(label="Number of Units (No. Bales/Bags)", max_digits=30, decimal_places=12,
@@ -84,7 +84,7 @@ class FeedEntryForm(forms.Form):
     batch = forms.RegexField(label="Batch Number", regex=r"^[A-Za-z0-9]*$", max_length=80, required=False)
     declaration_reference = forms.RegexField(label="CVD or Equivalent Reference", regex=r"^[A-Za-z0-9]*$", max_length=80, required=False)
     date_kind = forms.ChoiceField(label="Date Type", choices=[("", "Not supplied"), ("expiry", "Expiry"), ("DOM", "Manufactured")], required=False)
-    date_value = forms.DateField(label="Expiry/Manufacturing Date", required=False, widget=forms.DateInput(attrs={"type": "date"}))
+    date_value = forms.DateField(label="Expiry/Manufacturing Date", required=False, widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"))
     product_tested = forms.ChoiceField(label="Residue Tested", choices=[("no", "No"), ("yes", "Yes")], required=False)
     residue_test_details = forms.CharField(label="Residue Test Details", max_length=4000, required=False, widget=forms.Textarea(attrs={"rows": 3}))
 
@@ -145,7 +145,7 @@ class FeedEntryForm(forms.Form):
 
 
 class FeedingForm(forms.Form):
-    feed_date = forms.DateField(label="Date", widget=forms.DateInput(attrs={"type": "date"}))
+    feed_date = forms.DateField(label="Date", widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"))
     mob = forms.ChoiceField(label="Mob")
     feed_type = forms.ChoiceField(label="Feed Type")
     item = forms.ChoiceField(label="Feed")
@@ -289,7 +289,9 @@ def inventory_page(request, kind="feed"):
         items = [item for item in items if not item.retired]
     for item in items:
         item.display_feed_unit = unit_for(item)
+    confirmed = request.session.pop("feed_confirmed", "") if kind == "feed" else ""
     return render(request, "herd/inventory.html", {
+        "confirmed_submission": confirmed,
         "kind": kind, "items": items,
         "title": request.user.property.name + (" Feed Inventory" if kind == "feed" else " Chemical Inventory"),
     })
@@ -330,6 +332,7 @@ def reviewed_workflow(request, operation, form_class, title):
                 raise PermissionDenied("Property/PIC or workflow changed. Preview again.")
             # execute checks the exact digest for retries, then version and validation under its lock.
             services.execute(actor, state["key"], operation, state["data"], state["version"])
+            request.session["feed_confirmed"] = state["key"]
             messages.success(request, "Feed record saved." if operation == "receipt" else "Feeding saved." if operation == "feed" else "Feed inventory updated.")
             return redirect("feed_inventory")
         if task == "preview" and form.is_valid():

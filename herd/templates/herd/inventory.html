@@ -1,5 +1,5 @@
 {% extends 'herd/base.html' %}{% block main_class %}active-cattle{% endblock %}{% block content %}
-<h1>{{ title }}</h1>
+<h1>{{ title }}</h1>{% if confirmed_submission %}<span id="confirmed-result" data-submission="{{ confirmed_submission }}" hidden></span>{% endif %}
 {% if kind == 'feed' %}
 <p>Feed inventory is shared by all PICs in {{ user.property.name }}. A feeding may take a product with a positive balance below zero. Once its balance reaches zero or below, further feeding using that product is blocked until the balance is positive again.</p>
 <div class="controls inventory-actions"><a class="button" href="{% url 'add_feed' %}">Add Feed</a><a class="button" href="{% url 'manage_feed' 'retire' %}">Remove Feed</a><a class="button" href="{% url 'manage_feed' 'stocktake' %}">Bulk Edit</a><a class="button" href="{% url 'workflow' 'feeding' %}">Cattle Feeding</a></div>

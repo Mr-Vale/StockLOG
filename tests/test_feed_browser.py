@@ -106,7 +106,23 @@ def test_inventory_entry_source_fields_and_unit_measurement_feeding(farm, live_s
         page.get_by_role("button", name="Preview Effect", exact=True).click()
         expect(page.get_by_text("Amount to be issued:", exact=False)).to_contain_text("350")
         assert db_query(lambda: Inventory.objects.get(pk=hay).balance) == 35000
+        # Commit the feeding but drop its response, then retry the same signed save.
+        def lose_response(route):
+            if route.request.method == "POST" and "confirmed_payload" in (route.request.post_data or ""):
+                response = route.fetch()
+                assert response.status == 200
+                route.abort("connectionreset")
+            else:
+                route.continue_()
+        page.wait_for_function("window.stocklogRecoveryReady === true")
+        page.route("**/workflow/feeding/", lose_response)
         page.get_by_role("button", name="Confirm Save", exact=True).click()
+        expect(page.locator("#recovery")).to_contain_text("Not confirmed")
+        assert db_query(lambda: Inventory.objects.get(pk=hay).balance) == 34650
+        page.unroute("**/workflow/feeding/", lose_response)
+        page.get_by_role("button", name="Retry same submission", exact=True).click()
+        expect(page).to_have_url(live_server.url + "/inventory/feed/")
+        expect(page.locator("#recovery")).to_be_hidden()
         assert db_query(lambda: Inventory.objects.get(pk=hay).balance) == 34650
         assert db_query(lambda: Allocation.objects.filter(category="feed", amount=-35).count()) == 2
         page.goto(live_server.url + "/")

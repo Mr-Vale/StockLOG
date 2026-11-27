@@ -15,10 +15,10 @@
 {% else %}
 {% if operation == 'feed_adjust' %}<p>{% if title == 'Remove Feed' %}Removal retires selected feed and keeps its balance and history.{% else %}Select the feed records and enter actual balances in their displayed base units. These are audited stock corrections; package prices and past animal costs stay unchanged.{% endif %}</p>{% endif %}
 <form method="post" class="entry-form" data-feed-form data-operation="{{ operation }}" data-recovery>{% csrf_token %}<input type="hidden" name="farm_context" value="{{ request.farm_context }}">
-{{ form.non_field_errors }}<div class="entry-fields">
+<input type="hidden" name="task" value="preview">{{ form.non_field_errors }}<div class="entry-fields">
 {% for field in form %}<div data-feed-field="{{ field.name }}" {% if field.name == 'supplier_name' or field.name == 'origin_text' or field.name == 'batch' or field.name == 'declaration_reference' or field.name == 'date_kind' or field.name == 'date_value' or field.name == 'product_tested' %}data-feed-source {% if form.home_grown.value %}hidden{% endif %}{% endif %} {% if field.name == 'residue_test_details' %}data-feed-residue hidden{% endif %}>
 {% if field.field.widget.input_type == 'checkbox' and field.name != 'items' %}<label class="check">{{ field }} {{ field.label }}</label>{% else %}{{ field.label_tag }}{{ field }}{% endif %}{{ field.errors }}{% if field.help_text %}<span class="helptext">{{ field.help_text }}</span>{% endif %}</div>{% endfor %}
-</div><button name="task" value="preview">{% if operation == 'feed' %}Preview Effect{% else %}Preview{% endif %}</button></form>
+</div><button data-feed-preview>{% if operation == 'feed' %}Preview Effect{% else %}Preview{% endif %}</button></form>
 {% endif %}
 {{ products|default_if_none:''|json_script:'feed-products' }}<script src="{% static 'herd/feed.js' %}" defer></script>
 {% endblock %}

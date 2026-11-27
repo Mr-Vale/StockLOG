@@ -32,6 +32,11 @@
     if (csrf) body.set('csrfmiddlewaretoken',csrf);
     const response = await fetch(path,{method:'POST',body,credentials:'same-origin'});
     if (!response.ok) throw new Error('Server did not confirm this submission.');
+    if (response.redirected) {
+      const destination = new URL(response.url);
+      if (destination.origin !== location.origin) throw new Error('Unexpected recovery destination.');
+      history.replaceState(null, '', destination.pathname + destination.search + destination.hash);
+    }
     const html = await response.text();
     window.stocklogRecoveryReady=false;document.open();document.write(html);document.close();
   }
