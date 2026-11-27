@@ -52,8 +52,8 @@ def test_inventory_entry_source_fields_and_unit_measurement_feeding(farm, live_s
         page.locator("[name=feed_unit]").select_option("kg")
         page.locator("[name=package_price]").fill("70.00")
         page.get_by_role("button", name="Preview", exact=True).click()
-        expect(page.locator('dt:has-text("Number of Units") + dd')).to_have_text("100")
-        expect(page.locator('dt:has-text("Quantity Per Unit") + dd')).to_have_text("350")
+        expect(page.locator('tr:has(th:has-text("Number of Units")) td')).to_have_text("100 units")
+        expect(page.locator('tr:has(th:has-text("Quantity Per Unit")) td')).to_have_text("350 kg")
         assert db_query(lambda: Inventory.objects.filter(name="UI hay").count()) == 0
         page.get_by_role("button", name="Save", exact=True).click()
         expect(page).to_have_url(live_server.url + "/inventory/feed/")
@@ -105,7 +105,8 @@ def test_inventory_entry_source_fields_and_unit_measurement_feeding(farm, live_s
         page.locator("[name=mob]").select_option(mob)
         page.locator("[name=quantity]").fill("1")
         page.get_by_role("button", name="Preview Effect", exact=True).click()
-        expect(page.get_by_text("Amount to be issued:", exact=False)).to_contain_text("350")
+        expect(page.get_by_role("columnheader", name="Amount to be issued", exact=True)).to_be_visible()
+        expect(page.get_by_role("cell", name="350 kg", exact=True)).to_be_visible()
         assert db_query(lambda: Inventory.objects.get(pk=hay).balance) == 35000
         # Commit the feeding but drop its response, then retry the same signed save.
         def lose_response(route):

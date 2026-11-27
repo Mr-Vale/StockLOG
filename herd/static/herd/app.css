@@ -15,3 +15,5 @@ button:disabled{opacity:.55;cursor:default}
 .active-cattle form{max-width:none}.button[aria-disabled=true]{opacity:.55;cursor:default}.bulk-field{min-width:0}.bulk-field .update-choice{display:flex;align-items:center;gap:.5rem}.bulk-field .update-choice label{margin:0}.bulk-field .update-choice input{flex-shrink:0}.confirmation-actions{margin-top:1rem}
 
 .inventory-actions{margin:1rem 0}.negative-stock{color:#a11d15}.entry-fields [data-feed-field=items]{grid-column:1/-1}
+
+.entry-form fieldset{min-width:0;border:1px solid #cfdbd0;border-radius:.5rem;margin:1rem 0;padding:1rem}.entry-form legend{font-weight:700}

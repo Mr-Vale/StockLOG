@@ -116,7 +116,7 @@ def test_combined_summary_edit_actions_and_history(farm, live_server, tmp_path):
         )
         page.reload()
         expect(summary.get_by_text("Deactive", exact=True)).to_be_visible()
-        expect(summary.get_by_text("0.00 AUD", exact=True)).to_have_count(2)
+        expect(summary.get_by_text("$0.00", exact=True)).to_have_count(2)
         expect(summary.get_by_text("Sale price", exact=True)).to_be_visible()
         expect(page.get_by_role("button", name="Save changes")).to_have_count(0)
         for width in [1440, 390]:

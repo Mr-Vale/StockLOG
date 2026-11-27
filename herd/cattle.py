@@ -227,7 +227,7 @@ class ExitForm(ActionForm):
             "destination_name": "Destination Name",
             "nvd": "NVD Number",
             "mob": "MOB Number",
-            "price": "Sale Price",
+            "price": "Sale Price ($)",
             "price_mode": "Price Mode",
         }.items():
             self.fields[key].label = label

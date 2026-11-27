@@ -1,0 +1,44 @@
+{% extends 'herd/base.html' %}{% load display %}{% block content %}
+<h1>{% if product %}{{ product.name }}{% else %}{{ title }}{% endif %}</h1>
+{% if confirmed_submission %}<span id="confirmed-result" data-submission="{{ confirmed_submission }}" hidden></span>{% endif %}
+{% if error %}<p role="alert">{{ error }}</p>{% endif %}
+{% if product %}
+<section class="animal-summary-card"><h2>Feed and stock details</h2><dl class="animal-summary">
+<dt>Feed type</dt><dd>{{ product.feed_type|default:'Not recorded' }}</dd>
+<dt>Units remaining</dt><dd>{{ product.packages_remaining|compact }} units</dd>
+<dt>Remaining stock</dt><dd>{{ product.balance|compact }} {{ product.base_unit }}</dd>
+<dt>Quantity/item</dt><dd>{{ product.package_size|compact }} {{ product.stock_unit }}</dd>
+<dt>Price/item</dt><dd>{{ product.package_price|money }}</dd>
+<dt>Cost/stock unit</dt><dd>{{ product.cost_per_stock_unit|money }} / {{ product.stock_unit }}</dd>
+<dt>Feed unit</dt><dd>{{ feed_unit }}</dd><dt>Stock value</dt><dd>{{ product.remaining_value|money }}</dd>
+<dt>Batch/date</dt><dd>{{ product.batch|default:'Not recorded' }} {{ product.date_kind }} {{ product.date_value|date:'d/m/Y'|default:'Not recorded' }}</dd>
+<dt>Status</dt><dd>{% if product.retired %}Retired{% else %}Current{% endif %}</dd>
+</dl></section>
+<section class="animal-summary-card"><h2>Recorded feeding activity — PIC {{ user.pic.number }}</h2><dl class="animal-summary">
+<dt>Distinct cattle fed</dt><dd>{{ usage.cattle|default_if_none:'Not recorded' }}</dd>
+<dt>Stock entry date</dt><dd>{{ usage.entry|date:'d/m/Y'|default:'Not recorded' }}</dd>
+<dt>Time held</dt><dd>{% if usage.held_days is not None %}{{ usage.held_days }} days{% else %}Not recorded{% endif %}</dd>
+<dt>Total quantity fed</dt><dd>{{ usage.total|compact }} {{ usage.unit }}</dd>
+<dt>Latest feeding date</dt><dd>{% if usage.latest is not None %}{{ usage.latest|user_time:user }}{% else %}Not recorded{% endif %}</dd>
+</dl><p>Feeding figures use recorded event participants for the selected PIC. Stock and stock entry are shared across this property. Reversed feedings are excluded.</p></section>
+{% endif %}
+{% if confirmation %}
+<span data-recovery-reviewed hidden></span><h2>Preview</h2>
+<div class="table"><table class="review"><thead><tr><th>Product</th>{% if action == 'remove' %}<th>Quantity removed</th><th>Resulting stock balance</th><th>Retire product</th>{% else %}<th>Field</th><th>Current value</th><th>Proposed value</th>{% endif %}<th>Reason</th></tr></thead><tbody>
+{% for row in changes %}{% if action == 'remove' %}<tr><td>{{ row.product }}</td><td>{{ row.removed|compact }} {{ row.unit }}</td><td>{{ row.after|compact }} {{ row.unit }}</td><td>{{ row.retired|yesno:'Yes,No' }}</td><td>{{ row.reason }}</td></tr>
+{% else %}
+{% if row.before != row.after %}<tr><td>{{ row.product }}</td><td>Remaining stock</td><td>{{ row.before|compact }} {{ row.unit }}</td><td>{{ row.after|compact }} {{ row.unit }}</td><td>{{ row.reason }}</td></tr>{% endif %}
+{% if row.before_retired != row.retired %}<tr><td>{{ row.product }}</td><td>Retired</td><td>{{ row.before_retired|yesno:'Yes,No' }}</td><td>{{ row.retired|yesno:'Yes,No' }}</td><td>{{ row.reason }}</td></tr>{% endif %}
+{% if row.before == row.after and row.before_retired == row.retired %}<tr><td>{{ row.product }}</td><td>No stock or status change</td><td>{{ row.before|compact }} {{ row.unit }}</td><td>{{ row.after|compact }} {{ row.unit }}</td><td>{{ row.reason }}</td></tr>{% endif %}
+{% endif %}{% endfor %}</tbody></table></div>
+<p>Nothing is saved until you confirm. Historical feeding records and cattle costs are retained.</p>
+<form method="post" data-recovery>{% csrf_token %}<input type="hidden" name="farm_context" value="{{ request.farm_context }}"><input type="hidden" name="confirmed_payload" value="{{ confirmation }}"><button>Save</button></form>
+<a href="">Return to form</a>
+{% elif form %}
+<h2>{{ title }}</h2>
+<p>To change the price, retire this product, then add it again with the new price.</p>
+<p>{% if action == 'remove' %}Record the actual balance after removal and choose whether to retire each product. Leaving the balance unchanged retires the record without a stock deduction.{% else %}Enter actual balances and retirement status. These audited corrections do not reprice past cattle costs.{% endif %}</p>
+<form method="post" class="entry-form" data-recovery>{% csrf_token %}<input type="hidden" name="farm_context" value="{{ request.farm_context }}"><input type="hidden" name="selection_token" value="{{ selection_token }}"><input type="hidden" name="task" value="preview">{{ form.non_field_errors }}
+{% for item,fields in form.groups %}<fieldset><legend>{{ item.name }}</legend><div class="entry-fields">{% for field in fields %}<div>{% if field.field.widget.input_type == 'checkbox' %}<label class="check">{{ field }} {{ field.label }}</label>{% else %}{{ field.label_tag }}{{ field }}{% endif %}{{ field.errors }}</div>{% endfor %}</div></fieldset>{% endfor %}<button>Preview</button></form>
+{% endif %}<p><a class="button" href="{% url 'feed_inventory' %}">Return to Feed Inventory</a></p>
+{% endblock %}

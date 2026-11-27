@@ -541,7 +541,7 @@ def build(actor, definition):
         "generated_at": clock.now(),
         "display_timezone": actor.display_timezone,
         "display_format": actor.date_format,
-        "note": "AUD. Date/attribute filters select animals; their finances always cover the full lifetime. Unknown purchase prices make P/L incomplete. Active animals show costs/revenue to date, not a final sale outcome. Export dates use your display timezone. Property timezone "
+        "note": "$. Date/attribute filters select animals; their finances always cover the full lifetime. Unknown purchase prices make P/L incomplete. Active animals show costs/revenue to date, not a final sale outcome. Export dates use your display timezone. Property timezone "
         + actor.property.timezone
         + "; selected PIC "
         + actor.pic.number
@@ -600,7 +600,7 @@ def xlsx(report):
     ws.print_title_rows = "1:4"
     if report.get("groups"):
         summary = wb.create_sheet("Groups")
-        summary.append(["Group", "Records", "Cost AUD", "Revenue AUD", "Profit AUD"])
+        summary.append(["Group", "Records", "Cost $", "Revenue $", "Profit $"])
         for group in report["groups"]:
             summary.append(
                 [
@@ -612,7 +612,7 @@ def xlsx(report):
                 ]
             )
     raw = wb.create_sheet("Full precision")
-    raw.append(["Stored precision in AUD/quantities; no financial lifetime clipping."])
+    raw.append(["Stored precision in $/quantities; no financial lifetime clipping."])
     raw.append(columns)
     for row in report["rows"]:
         raw.append([text(row.get(c)) for c in columns])
@@ -743,7 +743,7 @@ def pdf(report):
     story += [
         Spacer(1, 12),
         Paragraph(
-            "Totals (AUD, full precision): " + escape(text(report["totals"])),
+            "Totals ($, full precision): " + escape(text(report["totals"])),
             styles["Normal"],
         ),
     ]

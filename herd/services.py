@@ -1405,7 +1405,7 @@ def reverse(actor, event, data):
             a.identifiers.filter(kind=old["kind"], value=old["value"]).update(current=True, retired_at=None)
     if original.kind in {"edit_animal", "bulk_edit"}:
         Allocation.objects.filter(resolved_by=original).update(resolved_by=None)
-    if original.kind == "feed_adjust" and original.details.get("action") == "retire":
+    if original.kind == "feed_adjust" and original.details.get("action") in {"retire", "selected_edit", "selected_remove"}:
         for saved in original.before["feed_items"]:
             Inventory.objects.filter(pk=saved["item"], property=actor.property).update(retired=saved["retired"])
     if original.kind == "retire":
