@@ -1,0 +1,25 @@
+{% extends 'herd/base.html' %}{% load static %}{% block content %}
+<h1>{{ title }}</h1><p>{{ user.property.name }} — PIC {{ user.pic.number }}. Amounts are AUD. Dates use the property timezone.</p>
+{% if error %}<p role="alert">{{ error }}</p>{% endif %}
+{% if confirmation %}
+<span data-recovery-reviewed hidden></span>
+<h2>{% if operation == 'feed' %}Preview Effect{% else %}Preview{% endif %}</h2>
+<dl>{% for label,value in details %}<dt><strong>{{ label }}</strong></dt><dd>{{ value }}</dd>{% endfor %}</dl>
+{% if operation == 'feed' %}<p>Amount to be issued: <strong>{{ effects.consumed }} {{ effects.stock.0.unit }}</strong>.</p><p>Resulting stock balance: <strong>{{ effects.balance }} {{ effects.stock.0.unit }}</strong>.</p><p>Feed cost to be allocated: <strong>{{ effects.cost }} AUD</strong> across {{ effects.count }} cattle.</p>{% if negative_balance %}<p class="notice negative-stock" role="alert">This feeding will take stock below zero. Further feeding of this product is blocked until its balance is positive again.</p>{% endif %}
+{% elif operation == 'receipt' %}<p>Received quantity: {{ effects.received }} {{ effects.base_unit }}. Resulting balance: {{ effects.balance }} {{ effects.base_unit }}. Total cost: {{ effects.cost }} AUD.</p>{% endif %}
+{% if operation == 'feed_adjust' %}<p>{{ effects.count }} feed record(s) will be updated together. Historical cost allocations will not be repriced.</p>{% for row in effects.stock %}<p>{{ row.name }}: adjustment {{ row.quantity }} {{ row.unit }}</p>{% endfor %}{% endif %}
+<p>Nothing is saved until you confirm.</p>
+<form method="post" data-recovery>{% csrf_token %}<input type="hidden" name="farm_context" value="{{ request.farm_context }}"><input type="hidden" name="confirmed_payload" value="{{ confirmation }}"><button>{% if operation == 'feed' %}Confirm Save{% else %}Save{% endif %}</button></form>
+<a href="">Return to form</a>
+{% elif no_feed %}
+<p role="status">{{ no_feed_message|default:'No feed available. Add feed to Feed Inventory before recording a feeding.' }}</p><a class="button" href="{% url 'add_feed' %}">Add Feed</a><a class="button" href="{% url 'feed_inventory' %}">Feed Inventory</a>
+{% else %}
+{% if operation == 'feed_adjust' %}<p>{% if title == 'Remove Feed' %}Removal retires selected feed and keeps its balance and history.{% else %}Select the feed records and enter actual balances in their displayed base units. These are audited stock corrections; package prices and past animal costs stay unchanged.{% endif %}</p>{% endif %}
+<form method="post" class="entry-form" data-feed-form data-operation="{{ operation }}" data-recovery>{% csrf_token %}<input type="hidden" name="farm_context" value="{{ request.farm_context }}">
+<input type="hidden" name="task" value="preview">{{ form.non_field_errors }}<div class="entry-fields">
+{% for field in form %}<div data-feed-field="{{ field.name }}" {% if field.name == 'supplier_name' or field.name == 'origin_text' or field.name == 'batch' or field.name == 'declaration_reference' or field.name == 'date_kind' or field.name == 'date_value' or field.name == 'product_tested' %}data-feed-source {% if form.home_grown.value %}hidden{% endif %}{% endif %} {% if field.name == 'residue_test_details' %}data-feed-residue hidden{% endif %}>
+{% if field.field.widget.input_type == 'checkbox' and field.name != 'items' %}<label class="check">{{ field }} {{ field.label }}</label>{% else %}{{ field.label_tag }}{{ field }}{% endif %}{{ field.errors }}{% if field.help_text %}<span class="helptext">{{ field.help_text }}</span>{% endif %}</div>{% endfor %}
+</div><button data-feed-preview>{% if operation == 'feed' %}Preview Effect{% else %}Preview{% endif %}</button></form>
+{% endif %}
+{{ products|default_if_none:''|json_script:'feed-products' }}<script src="{% static 'herd/feed.js' %}" defer></script>
+{% endblock %}

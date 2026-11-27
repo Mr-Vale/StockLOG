@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.0
+
+Separate property-wide Feed Inventory and Chemical Inventory pages. Add a reviewed
+feed entry form with whole-number receipt quantities, source/testing details and
+compatible item/feed units. Add date-only cattle feeding with positive-stock/type
+filters, whole-item or measured quantities, negative-balance previews, and atomic,
+idempotent stock/cost/audit confirmation. Feed removal retires records; bulk
+balance corrections preserve historical costs.
+
+Compatible feature release from 0.3.0. Additive migration 0002 adds an optional
+feed_unit column; existing inventory IDs, balances, cost bases and historical
+links remain unchanged. Legacy items use a compatible unit fallback. No reinstall
+or dependency/service changes. Migration changes mean the updater's conservative
+rollback guard may require forward recovery after an activation failure.
+
 ## 0.3.0
 
 Select cattle on Active Cattle before Bulk Edit or Cattle Exit. Carry an exact,

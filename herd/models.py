@@ -279,6 +279,7 @@ class Inventory(Scoped):
     )
     name = models.CharField(max_length=120)
     feed_type = models.CharField(max_length=24, blank=True)
+    feed_unit = models.CharField(max_length=12, blank=True, default="")
     category = models.CharField(max_length=24, default="veterinary")
     package_size = decimal_field(1)
     package_price = decimal_field()

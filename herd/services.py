@@ -818,6 +818,10 @@ UNITS = {
 
 
 def receipt(actor, event, data):
+    if data.get("feed_entry"):
+        from .feed import validate_receipt
+        data = validate_receipt(actor, data)
+        event.details.update(clean(data))
     kind = data["kind"]
     if kind not in ["feed", "chemical"] or not str(data.get("name", "")).strip():
         raise ValidationError("Inventory kind and product name are required.")
@@ -857,6 +861,12 @@ def receipt(actor, event, data):
         "category": data.get("category", "veterinary"),
         "restriction_days": int(data.get("restriction_days") or 0),
     }
+    if kind == "feed" and data.get("feed_unit"):
+        from .feed import compatible
+        if data["feed_unit"] not in {"unit", "kg", "g", "L", "mL"}:
+            raise ValidationError("Unsupported feed unit.")
+        compatible(unit, data["feed_unit"])
+        spec["feed_unit"] = data["feed_unit"]
     if spec["restriction_days"] < 0:
         raise ValidationError("Restriction days cannot be negative.")
     if kind == "chemical":
@@ -873,17 +883,29 @@ def receipt(actor, event, data):
     values["date_value"] = (
         date.fromisoformat(spec["date_value"]) if spec["date_value"] else None
     )
-    item, created = Inventory.objects.get_or_create(
-        property=actor.property,
-        signature=signature,
-        defaults={
-            **values,
-            "base_unit": base_unit,
-            "base_per_package": base,
-            "unit_cost": unit_cost,
-            "storage": data.get("storage", ""),
-        },
-    )
+    legacy = None
+    if kind == "feed" and "feed_unit" in spec:
+        from .feed import unit_for
+        old_spec = {k: v for k, v in spec.items() if k != "feed_unit"}
+        old_signature = hashlib.sha256(json.dumps(old_spec, sort_keys=True).encode()).hexdigest()
+        candidate = Inventory.objects.filter(property=actor.property, signature=old_signature, feed_unit="").first()
+        if candidate and unit_for(candidate) == spec["feed_unit"]:
+            legacy = candidate
+    if legacy is not None:
+        # Equivalent legacy specifications refill the same item without rewriting its signature or cost basis.
+        item, created = legacy, False
+    else:
+        item, created = Inventory.objects.get_or_create(
+            property=actor.property,
+            signature=signature,
+            defaults={
+                **values,
+                "base_unit": base_unit,
+                "base_per_package": base,
+                "unit_cost": unit_cost,
+                "storage": data.get("storage", ""),
+            },
+        )
     if item.retired:
         raise ValidationError(
             "This item is retired. Use an explicit inventory correction before selecting it again."
@@ -949,15 +971,43 @@ def retire(actor, event, data):
 
 
 def feed(actor, event, data):
+    if data.get("feeding_form"):
+        from .feed import validate_feeding
+        data = validate_feeding(actor, data)
+        event.details.update(clean(data))
     animals = members(actor, data["mob"], event.effective_at, event.effective_order)
     item = scoped(Inventory, actor, data["item"])
     if item.kind != "feed" or item.retired or item.balance <= 0:
         raise ValidationError(
             "Choose an available feed item with positive starting stock."
         )
+    if data.get("feeding_form"):
+        from .feed import unit_for
+        if data["feed_unit"] != unit_for(item):
+            raise ValidationError("The configured feed unit changed. Preview Effect again.")
+        for key, actual in [("preview_balance", item.balance), ("preview_unit_cost", item.unit_cost),
+                            ("preview_base_per_package", item.base_per_package)]:
+            if key in data:
+                try:
+                    same = Decimal(str(data[key])).is_finite() and Decimal(str(data[key])) == actual
+                except (InvalidOperation, ValueError, TypeError):
+                    same = False
+                if not same:
+                    raise ValidationError("Feed balance or cost changed. Preview Effect again.")
+        if "preview_animals" in data and sorted(str(a.pk) for a in animals) != sorted(data["preview_animals"]):
+            raise ValidationError("Mob cattle changed. Preview Effect again.")
     amount = number(data["quantity"], positive=True)
     mode = data.get("mode", "total_kg")
-    if mode == "bales":
+    if mode == "unit":
+        if amount != amount.to_integral_value():
+            raise ValidationError("Unit mode requires a whole number of items.")
+        qty = amount * item.base_per_package
+    elif mode == "measure":
+        from .feed import conversion, unit_for
+        if unit_for(item) == "unit":
+            raise ValidationError("This product supports Unit mode only.")
+        qty = amount * conversion(unit_for(item), item.base_unit)
+    elif mode == "bales":
         qty = amount * item.base_per_package
     elif mode == "kg_per_head":
         qty = amount * len(animals)
@@ -1258,6 +1308,7 @@ def reverse(actor, event, data):
         "procedure",
         "vet",
         "receipt",
+        "feed_adjust",
         "stocktake",
         "retire",
         "sale",
@@ -1354,6 +1405,9 @@ def reverse(actor, event, data):
             a.identifiers.filter(kind=old["kind"], value=old["value"]).update(current=True, retired_at=None)
     if original.kind in {"edit_animal", "bulk_edit"}:
         Allocation.objects.filter(resolved_by=original).update(resolved_by=None)
+    if original.kind == "feed_adjust" and original.details.get("action") == "retire":
+        for saved in original.before["feed_items"]:
+            Inventory.objects.filter(pk=saved["item"], property=actor.property).update(retired=saved["retired"])
     if original.kind == "retire":
         Inventory.objects.filter(
             pk=original.details["item"], property=actor.property
@@ -1585,3 +1639,11 @@ def transfer_cattle(actor, event, data):
 
 
 HANDLERS.update(edit_animal=edit_cattle, bulk_edit=bulk_cattle, transfer=transfer_cattle)
+
+
+def adjust_feed_inventory(actor, event, data):
+    from .feed import adjust_feed
+    return adjust_feed(actor, event, data)
+
+
+HANDLERS["feed_adjust"] = adjust_feed_inventory

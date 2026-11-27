@@ -24,7 +24,7 @@
   }
   const clear = () => localStorage.removeItem(scope);
   document.querySelector('[data-logout]')?.addEventListener('submit', () => {clear();sessionStorage.removeItem(keyName);sessionStorage.removeItem('stocklog.activeAccount');});
-  if (document.querySelector('#confirmed-result')) clear();
+  if (document.querySelector('#confirmed-result, [data-recovery-reviewed]')) clear();
   const panel = document.querySelector('#recovery');
   async function send(path, values) {
     const body = new FormData(); values.forEach(([k,v]) => body.append(k,v));
@@ -32,6 +32,11 @@
     if (csrf) body.set('csrfmiddlewaretoken',csrf);
     const response = await fetch(path,{method:'POST',body,credentials:'same-origin'});
     if (!response.ok) throw new Error('Server did not confirm this submission.');
+    if (response.redirected) {
+      const destination = new URL(response.url);
+      if (destination.origin !== location.origin) throw new Error('Unexpected recovery destination.');
+      history.replaceState(null, '', destination.pathname + destination.search + destination.hash);
+    }
     const html = await response.text();
     window.stocklogRecoveryReady=false;document.open();document.write(html);document.close();
   }
