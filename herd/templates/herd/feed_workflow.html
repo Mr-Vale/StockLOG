@@ -2,6 +2,7 @@
 <h1>{{ title }}</h1><p>{{ user.property.name }} — PIC {{ user.pic.number }}. Amounts are AUD. Dates use the property timezone.</p>
 {% if error %}<p role="alert">{{ error }}</p>{% endif %}
 {% if confirmation %}
+<span data-recovery-reviewed hidden></span>
 <h2>{% if operation == 'feed' %}Preview Effect{% else %}Preview{% endif %}</h2>
 <dl>{% for label,value in details %}<dt><strong>{{ label }}</strong></dt><dd>{{ value }}</dd>{% endfor %}</dl>
 {% if operation == 'feed' %}<p>Amount to be issued: <strong>{{ effects.consumed }} {{ effects.stock.0.unit }}</strong>.</p><p>Resulting stock balance: <strong>{{ effects.balance }} {{ effects.stock.0.unit }}</strong>.</p><p>Feed cost to be allocated: <strong>{{ effects.cost }} AUD</strong> across {{ effects.count }} cattle.</p>{% if negative_balance %}<p class="notice negative-stock" role="alert">This feeding will take stock below zero. Further feeding of this product is blocked until its balance is positive again.</p>{% endif %}

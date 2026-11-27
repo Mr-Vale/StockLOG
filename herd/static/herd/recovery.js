@@ -24,7 +24,7 @@
   }
   const clear = () => localStorage.removeItem(scope);
   document.querySelector('[data-logout]')?.addEventListener('submit', () => {clear();sessionStorage.removeItem(keyName);sessionStorage.removeItem('stocklog.activeAccount');});
-  if (document.querySelector('#confirmed-result')) clear();
+  if (document.querySelector('#confirmed-result, [data-recovery-reviewed]')) clear();
   const panel = document.querySelector('#recovery');
   async function send(path, values) {
     const body = new FormData(); values.forEach(([k,v]) => body.append(k,v));

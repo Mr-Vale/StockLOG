@@ -113,11 +113,14 @@ def test_inventory_entry_source_fields_and_unit_measurement_feeding(farm, live_s
                 response = route.fetch()
                 assert response.status == 200
                 route.abort("connectionreset")
+                page.evaluate("window.feedResponseDropped = true")
             else:
                 route.continue_()
         page.wait_for_function("window.stocklogRecoveryReady === true")
+        expect(page.locator("#recovery")).to_be_hidden()
         page.route("**/workflow/feeding/", lose_response)
         page.get_by_role("button", name="Confirm Save", exact=True).click()
+        page.wait_for_function("window.feedResponseDropped === true")
         expect(page.locator("#recovery")).to_contain_text("Not confirmed")
         assert db_query(lambda: Inventory.objects.get(pk=hay).balance) == 34650
         page.unroute("**/workflow/feeding/", lose_response)
