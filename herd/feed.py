@@ -318,7 +318,8 @@ def manage_feed(request, action):
 def reviewed_workflow(request, operation, form_class, title):
     actor = request.user
     task = request.POST.get("task")
-    form = form_class(actor, request.POST if request.method == "POST" and task == "preview" else None)
+    form = form_class(actor, request.POST if request.method == "POST" and task == "preview" else None,
+                      initial=request.POST.dict() if task == "refresh" else {})
     ctx = {"form": form, "title": title, "operation": operation}
     salt = "feed-workflow:" + str(actor.pk)
     state = None

@@ -37,6 +37,10 @@ if (feedForm) {
     type.addEventListener('change', renderProducts);
     item.addEventListener('change', renderModes);
     mode.addEventListener('change', () => { quantity.step = mode.value === 'unit' ? '1' : 'any'; });
+    const refresh = document.createElement('button');
+    refresh.type = 'submit'; refresh.name = 'task'; refresh.value = 'refresh';
+    refresh.formNoValidate = true; refresh.hidden = true; feedForm.append(refresh);
+    feedForm.elements.namedItem('feed_date').addEventListener('change', () => feedForm.requestSubmit(refresh));
     renderProducts();
   }
 }

@@ -221,8 +221,12 @@ with (
 
     def migrated_fixture(release, destination):
         result = fixture(release, destination)
-        (destination / "herd/migrations/0002_update_test.py").write_text(
-            "from django.db import migrations\nclass Migration(migrations.Migration):\n    dependencies=[('herd','0001_initial')]\n    operations=[]\n"
+        migration_dir = destination / "herd/migrations"
+        parent = sorted(path.stem for path in migration_dir.glob("[0-9]*.py"))[-1]
+        number = int(parent.split("_", 1)[0]) + 1
+        (migration_dir / f"{number:04d}_update_test.py").write_text(
+            "from django.db import migrations\nclass Migration(migrations.Migration):\n"
+            f"    dependencies=[('herd','{parent}')]\n    operations=[]\n"
         )
         return result
 

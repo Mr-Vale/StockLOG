@@ -285,3 +285,56 @@ def test_bulk_stock_correction_removal_reversal_and_existing_treatment(farm):
         run(b, "treat", {"mob": mob, "item": chemical, "dose": 1})
         assert Inventory.objects.get(pk=chemical).balance == before-1
         assert Inventory.objects.filter(pk=x.pk).exists()
+
+
+def test_type_product_and_pic_mob_validation(farm):
+    from tests.test_foundations import arrival
+
+    p, admin, b, _ = farm
+    with clock.at(T):
+        own_mob = setup_mob(b, 1)
+        item = Inventory.objects.get(pk=add(b)["item"])
+        add(b, name="Other type", feed_type="grain_mix")
+        second = PIC.objects.create(property=p, number="0TEST002")
+        b.pic = second
+        other_mob = run(b, "mob", {"name": "Other PIC mob"})["mob"]
+        arrival(b, tag="0TEST000OTH00001", mob=other_mob)
+        b.pic = admin.pic
+        data = issue(b, own_mob, item)
+        form = FeedingForm(b, {**data, "mob": str(other_mob)})
+        assert not form.is_valid() and "mob" in form.errors
+        form = FeedingForm(b, {**data, "feed_type": "grain_mix"})
+        assert not form.is_valid() and "item" in form.errors
+        before = item.balance
+        with pytest.raises(ValidationError):
+            run(b, "feed", {**data, "mob": str(other_mob)})
+        item.refresh_from_db()
+        assert item.balance == before
+
+
+def test_backdated_feeding_refreshes_historical_mob_members(farm):
+    _, admin, b, _ = farm
+    with clock.at(T - 86400):
+        old_mob = setup_mob(b, 1)
+        item = Inventory.objects.get(pk=add(b)["item"])
+        day = today(b).isoformat()
+    with clock.at(T):
+        new_mob = run(b, "mob", {"name": "Current mob"})["mob"]
+        from herd.models import Animal
+        animal = Animal.objects.get()
+        run(admin, "move", {"animals": [animal.label], "destination": new_mob})
+        assert str(old_mob) not in dict(FeedingForm(b).fields["mob"].choices)
+        client, token = client_for(b)
+        data = {"feed_date": day, "feed_type": "hay", "item": str(item.pk),
+                "mob": str(old_mob), "quantity": "1", "mode": "unit"}
+        refreshed = client.post("/workflow/feeding/", {**data, "farm_context": token, "task": "refresh"})
+        assert str(old_mob) in dict(refreshed.context["form"].fields["mob"].choices)
+        assert refreshed.context["form"]["quantity"].value() == "1"
+        preview = client.post("/workflow/feeding/", {**data, "farm_context": token, "task": "preview"})
+        assert preview.context["effects"]["count"] == 1
+        final = client.post("/workflow/feeding/", {"farm_context": token,
+                            "confirmed_payload": preview.context["confirmation"]})
+        assert final.status_code == 302
+        event = Event.objects.get(kind="feed")
+        assert event.details["mob"] == str(old_mob)
+        assert event.participants.get().animal_id == animal.pk
