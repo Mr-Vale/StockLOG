@@ -20,7 +20,7 @@ def test_entry_modes_review_and_responsive_navigation(farm, live_server):
         sign_in(page, live_server.url)
         expect(page.locator("#selection-card")).not_to_have_attribute("open", "")
         names = page.locator("nav a").all_text_contents()
-        assert names == ["Active Cattle", "Inventory", "Reports", "History", "Import", "Settings"]
+        assert names == ["Active Cattle", "Feed Inventory", "Chemical Inventory", "Reports", "History", "Import", "Settings"]
         page.screenshot(path=str(OUT / "desktop-home.png"), full_page=True)
         page.get_by_role("link", name="Change selection", exact=True).click()
         expect(page.locator("#selection-card")).to_have_attribute("open", "")

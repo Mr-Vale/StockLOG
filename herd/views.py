@@ -94,6 +94,9 @@ def dashboard(request):
 
 @login_required
 def action(request, operation):
+    if operation == "feed":
+        from .feed import feeding
+        return feeding(request)
     if operation in {"sale", "transfer", "death", "edit_animal", "bulk_edit"}:
         from .cattle import workflow
         return workflow(request, operation)
@@ -252,21 +255,8 @@ def animal_history(request, pk):
 
 @login_required
 def inventory(request):
-    return render(
-        request,
-        "herd/inventory.html",
-        {
-            "items": scope(Inventory, request.user)
-            .filter(
-                **(
-                    {"kind": request.GET["kind"]}
-                    if request.GET.get("kind") in ["feed", "chemical"]
-                    else {}
-                )
-            )
-            .order_by("retired", "kind", "name")
-        },
-    )
+    from .feed import inventory_page
+    return inventory_page(request, "chemical" if request.GET.get("kind") == "chemical" else "feed")
 
 
 @login_required

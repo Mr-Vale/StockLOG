@@ -296,6 +296,9 @@ def workflow(request, group):
         from django.http import Http404
 
         raise Http404
+    if group == "feeding":
+        from .feed import feeding
+        return feeding(request)
     if group == "exit":
         from .cattle import workflow
         return workflow(request, "sale")
