@@ -883,17 +883,29 @@ def receipt(actor, event, data):
     values["date_value"] = (
         date.fromisoformat(spec["date_value"]) if spec["date_value"] else None
     )
-    item, created = Inventory.objects.get_or_create(
-        property=actor.property,
-        signature=signature,
-        defaults={
-            **values,
-            "base_unit": base_unit,
-            "base_per_package": base,
-            "unit_cost": unit_cost,
-            "storage": data.get("storage", ""),
-        },
-    )
+    legacy = None
+    if kind == "feed" and "feed_unit" in spec:
+        from .feed import unit_for
+        old_spec = {k: v for k, v in spec.items() if k != "feed_unit"}
+        old_signature = hashlib.sha256(json.dumps(old_spec, sort_keys=True).encode()).hexdigest()
+        candidate = Inventory.objects.filter(property=actor.property, signature=old_signature, feed_unit="").first()
+        if candidate and unit_for(candidate) == spec["feed_unit"]:
+            legacy = candidate
+    if legacy is not None:
+        # Equivalent legacy specifications refill the same item without rewriting its signature or cost basis.
+        item, created = legacy, False
+    else:
+        item, created = Inventory.objects.get_or_create(
+            property=actor.property,
+            signature=signature,
+            defaults={
+                **values,
+                "base_unit": base_unit,
+                "base_per_package": base,
+                "unit_cost": unit_cost,
+                "storage": data.get("storage", ""),
+            },
+        )
     if item.retired:
         raise ValidationError(
             "This item is retired. Use an explicit inventory correction before selecting it again."

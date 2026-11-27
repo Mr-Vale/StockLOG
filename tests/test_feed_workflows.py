@@ -338,3 +338,17 @@ def test_backdated_feeding_refreshes_historical_mob_members(farm):
         event = Event.objects.get(kind="feed")
         assert event.details["mob"] == str(old_mob)
         assert event.participants.get().animal_id == animal.pk
+
+
+def test_equivalent_new_receipt_refills_legacy_identity_and_cost_basis(farm):
+    _, _, b, _ = farm
+    with clock.at(T):
+        item = Inventory.objects.get(pk=stock(b, feed_type="hay"))
+        signature, basis = item.signature, item.unit_cost
+        original_postings = list(item.postings.values_list("pk", flat=True))
+        run(b, "stocktake", {"item": item.pk, "actual": 0, "reason": "Counted empty"})
+        result = add(b, name="Hay", packages=2, package_size=330, package_price=65)
+        assert result["item"] == item.pk and result["created"] is False
+        item.refresh_from_db()
+        assert item.balance == 660 and item.unit_cost == basis and item.signature == signature
+        assert item.postings.filter(pk__in=original_postings).count() == len(original_postings)
