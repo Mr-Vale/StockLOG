@@ -14,7 +14,9 @@ field. It does not change existing IDs, signatures, balances, base quantities,
 prices, postings, allocations, events or audit links. Legacy feed uses its
 compatible base/stock unit when no explicit feed unit is recorded.
 
-New feed specifications include the chosen feed unit in receipt matching. An\nequivalent legacy specification using the same effective unit refills the same\nitem without rewriting its signature or cost basis. Source
+New feed specifications include the chosen feed unit in receipt matching. An
+equivalent legacy specification using the same effective unit refills the same
+item without rewriting its signature or cost basis. Source
 name/address, CVD and testing data remain on immutable receipt events, as in the
 existing records; batch and typed expiry/DOM dates retain their existing columns.
 No chemical fields or treatment contracts are repurposed. Removal retires feed;
