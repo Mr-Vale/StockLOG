@@ -38,7 +38,7 @@
 <section class="animal-summary-card" aria-labelledby="cost-heading">
 <h2 id="cost-heading">Cost and treatment</h2>
 <dl>
-<dt>Total cost to date</dt><dd>{{ summary.cost|floatformat:2 }} AUD</dd>
+<dt>Total cost to date</dt><dd>${{ summary.cost|floatformat:2 }}</dd>
 <dt>Latest treatment date</dt><dd>{{ summary.treatment_date|date:'d/m/Y'|default:'Not recorded' }}</dd>
 </dl>
 {% if not summary.financial_complete %}<p>Some costs are not recorded. The total includes recorded costs only.</p>{% endif %}
@@ -54,7 +54,7 @@
 <dt>Destination address</dt><dd>{{ summary.destination_address|default:'Not recorded' }}</dd>
 <dt>Outgoing NVD number</dt><dd>{{ summary.outgoing_nvd|default:'Not recorded' }}</dd>
 {% else %}<dt>Exit type</dt><dd>Death — destination, outgoing NVD and sale price do not apply.</dd>{% endif %}
-{% if summary.sale %}<dt>Sale price</dt><dd>{% if summary.sale_price is not None %}{{ summary.sale_price|floatformat:2 }} AUD{% else %}Not recorded{% endif %}</dd>{% endif %}
+{% if summary.sale %}<dt>Sale price</dt><dd>{% if summary.sale_price is not None %}${{ summary.sale_price|floatformat:2 }}{% else %}Not recorded{% endif %}</dd>{% endif %}
 </dl>
 {% endif %}</div>
 </section>

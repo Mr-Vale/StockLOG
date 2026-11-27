@@ -50,7 +50,7 @@ def test_summary_gaps_direct_save_and_selected_history(farm):
         ]:
             assert f"<dt>{label}</dt><dd>Not recorded</dd>" in html
         assert "<dd>Active</dd>" in html
-        assert "<dt>Total cost to date</dt><dd>0.00 AUD</dd>" in html
+        assert "<dt>Total cost to date</dt><dd>$0.00</dd>" in html
         assert "Some costs are not recorded" in html
         assert "Complete or correct details" not in html
         assert "<h2>Lifetime history" not in html and "<pre>" not in html
@@ -108,7 +108,7 @@ def test_cost_exit_and_repurchase_use_animal_lifetime_not_group_or_net(farm):
         assert summary["destination_pic"] == "0DEST001" and summary["outgoing_nvd"] == "00000002"
         html = response.content.decode()
         assert "<dt>Destination address</dt><dd>Not recorded</dd>" in html
-        assert "<dt>Sale price</dt><dd>200.01 AUD</dd>" in html
+        assert "<dt>Sale price</dt><dd>$200.01</dd>" in html
         assert "Revenue" not in html and "P/L" not in html
         assert "form" not in response.context
         assert client.post(url(x), {"farm_context": token, "task": "preview"}).status_code == 200
@@ -150,7 +150,7 @@ def test_birth_death_zero_sale_and_transfer_acquisition(farm):
         assert "destination, outgoing NVD and sale price do not apply" in response.content.decode()
         x = animal(b)
         run(b, "sale", dict(animal=x.label, destination_pic="0DEST001", nvd="00000002", price=0))
-        assert "<dt>Sale price</dt><dd>0.00 AUD</dd>" in client.get(url(x)).content.decode()
+        assert "<dt>Sale price</dt><dd>$0.00</dd>" in client.get(url(x)).content.decode()
         moved = animal(b, 2)
         dest = PIC.objects.create(property=p, number="0TEST002")
         run(b, "transfer", dict(animal=moved.label, destination_pic=dest.number, nvd="00000003"))

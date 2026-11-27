@@ -67,7 +67,7 @@ LABELS = {
     "breed": "Breed/Description",
     "sex": "Sex",
     "mob": "MOB Number",
-    "purchase_cost": "Cost (AUD)",
+    "purchase_cost": "Cost ($)",
     "estimated_weeks": "Estimated Age — weeks",
     "dob": "Date of Birth",
     "mother_nlis": "Mother’s NLIS ID or RFID",

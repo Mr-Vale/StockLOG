@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.0
+
+Use $ for interface currency labels and amounts. Feed Inventory now has sortable
+Active Cattle style headers, product details and signed selection workflows for
+removal and bulk stock corrections. Product usage summaries use recorded feeding
+participants, and all feed previews use tables with display-only rounding.
+Price changes require retiring and re-adding the product with the new price.
+
+Compatible feature release from 0.4.0. No schema, dependency or service changes;
+existing balances, cost bases, allocations and audit history retain full precision.
+
+
 ## 0.4.0
 
 Separate property-wide Feed Inventory and Chemical Inventory pages. Add a reviewed

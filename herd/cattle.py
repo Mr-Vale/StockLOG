@@ -84,7 +84,7 @@ class EditForm(EntryForm):
         self.fields[
             "entry_date"
         ].help_text = "Property calendar date for the current on-farm period."
-        self.fields["purchase_cost"].label = "Purchase Cost"
+        self.fields["purchase_cost"].label = "Purchase Cost ($)"
         self.fields["estimated_weeks"].label = "Estimated Age - weeks"
         self.fields["sex"].label = "SEX"
         self.fields["mother_nlis"].label = LABELS["mother_nlis"]
@@ -227,7 +227,7 @@ class ExitForm(ActionForm):
             "destination_name": "Destination Name",
             "nvd": "NVD Number",
             "mob": "MOB Number",
-            "price": "Sale Price",
+            "price": "Sale Price ($)",
             "price_mode": "Price Mode",
         }.items():
             self.fields[key].label = label

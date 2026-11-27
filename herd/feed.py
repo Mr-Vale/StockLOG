@@ -77,7 +77,7 @@ class FeedEntryForm(forms.Form):
                                       widget=forms.NumberInput(attrs={"step": "any"}))
     stock_unit = forms.ChoiceField(label="Item Unit", choices=ITEM_UNITS)
     feed_unit = forms.ChoiceField(label="Feed Unit", choices=FEED_UNITS)
-    package_price = forms.DecimalField(label="Cost per Item", max_digits=12, decimal_places=2, min_value=0)
+    package_price = forms.DecimalField(label="Cost per Item ($)", max_digits=12, decimal_places=2, min_value=0)
     home_grown = forms.BooleanField(label="Produced On Farm", required=False, initial=True)
     supplier_name = forms.CharField(label="Source Name", max_length=160, required=False)
     origin_text = forms.CharField(label="Source Address", max_length=4000, required=False)
@@ -103,7 +103,7 @@ class FeedEntryForm(forms.Form):
         self.fields["feed_type"].choices = list(types.items())
         for key in ["packages", "package_size"]:
             self.fields[key].help_text = "Rounded down to a whole number before preview and save."
-        self.fields["package_price"].help_text = "AUD; at most 10 digits before the decimal and 2 decimal places."
+        self.fields["package_price"].help_text = "$; at most 10 digits before the decimal and 2 decimal places."
         if data is not None and data.get("home_grown"):
             for key in SOURCE_FIELDS:
                 self.fields[key].disabled = True
@@ -263,6 +263,9 @@ class FeedAdjustForm(forms.Form):
 
 
 def adjust_feed(actor, event, data):
+    if data.get("action") in {"selected_edit", "selected_remove"}:
+        from .feed_inventory import adjust_selected
+        return adjust_selected(actor, event, data)
     if data.get("action") not in {"retire", "stocktake"} or not data.get("reason"):
         raise ValidationError("Choose a feed adjustment and record its reason.")
     rows = data.get("rows", [])
@@ -284,13 +287,19 @@ def adjust_feed(actor, event, data):
 
 @login_required
 def inventory_page(request, kind="feed"):
+    from .feed_inventory import table
     items = list(scope(Inventory, request.user).filter(kind=kind).order_by("retired", "name"))
     if kind == "feed" and not request.GET.get("removed"):
         items = [item for item in items if not item.retired]
     for item in items:
         item.display_feed_unit = unit_for(item)
     confirmed = request.session.pop("feed_confirmed", "") if kind == "feed" else ""
+    try:
+        ctx = table(request, items) if kind == "feed" else {}
+    except ValidationError as exc:
+        return render(request, "herd/feed_edit.html", {"title": "Feed Inventory", "error": "; ".join(exc.messages)}, status=400)
     return render(request, "herd/inventory.html", {
+        **ctx,
         "confirmed_submission": confirmed,
         "kind": kind, "items": items,
         "title": request.user.property.name + (" Feed Inventory" if kind == "feed" else " Chemical Inventory"),
@@ -309,12 +318,8 @@ def feeding(request):
 
 @login_required
 def manage_feed(request, action):
-    if action not in {"retire", "stocktake"}:
-        from django.http import Http404
-        raise Http404
-    def form_class(actor, data=None, **kwargs):
-        return FeedAdjustForm(actor, action, data, **kwargs)
-    return reviewed_workflow(request, "feed_adjust", form_class, "Remove Feed" if action == "retire" else "Bulk Edit Feed")
+    from .feed_inventory import manage
+    return manage(request, action)
 
 
 def reviewed_workflow(request, operation, form_class, title):
@@ -358,7 +363,8 @@ def reviewed_workflow(request, operation, form_class, title):
                 details.append((field.label, value if value not in (None, "") else "Not recorded"))
             ctx.update(
                 confirmation=signing.dumps(state, salt=salt, compress=True),
-                details=details, effects=reviewed["effects"],
+                details=details, preview_rows=preview_rows(form, details), effects=reviewed["effects"],
+                preview_mob=dict(details).get("Mob"), preview_feed=dict(details).get("Feed"),
                 negative_balance=operation == "feed" and Decimal(str(reviewed["effects"]["balance"])) < 0,
             )
     except (ValidationError, signing.BadSignature, IntegrityError, ValueError, KeyError) as exc:
@@ -374,3 +380,26 @@ def reviewed_workflow(request, operation, form_class, title):
     if isinstance(ctx["form"], FeedingForm):
         ctx["products"] = [{"id": str(i.pk), "name": i.name, "type": i.feed_type or "__other__", "unit": unit_for(i)} for i in ctx["form"].products]
     return render(request, "herd/feed_workflow.html", ctx)
+
+
+def preview_rows(form, details):
+    """Keep signed payloads exact; format a separate representation for review."""
+    from .templatetags.display import compact, money
+    rows = []
+    labels = {field.label: key for key, field in form.fields.items()}
+    data = form.cleaned_data
+    for label, value in details:
+        key = labels[label]
+        if key in {"package_price"}:
+            value = money(value)
+        elif key in {"packages", "package_size", "quantity"}:
+            value = compact(value)
+            if key == "packages":
+                value += " units"
+            elif key == "package_size":
+                value += " " + data["stock_unit"]
+            elif key == "quantity":
+                item = next(i for i in form.products if str(i.pk) == str(data["item"]))
+                value += " " + ("units" if data["mode"] == "unit" else unit_for(item))
+        rows.append((label, value))
+    return rows

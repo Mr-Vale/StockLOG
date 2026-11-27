@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import feed, home, views
+from . import feed, feed_inventory, home, views
 
 urlpatterns = [
     path("properties/add/", home.add_property, name="add_property"),
@@ -24,6 +24,7 @@ urlpatterns = [
     path("inventory/feed/", feed.inventory_page, name="feed_inventory"),
     path("inventory/chemical/", feed.inventory_page, {"kind": "chemical"}, name="chemical_inventory"),
     path("inventory/feed/add/", feed.add_feed, name="add_feed"),
+    path("inventory/feed/product/<int:pk>/", feed_inventory.product_detail, name="feed_product"),
     path("inventory/feed/<str:action>/", feed.manage_feed, name="manage_feed"),
     path("events/", views.events, name="events"),
     path("reports/", views.report_view, name="reports"),
