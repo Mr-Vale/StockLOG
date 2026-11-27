@@ -29,7 +29,10 @@ def compact(value):
             if not amount.is_finite():
                 return "Not recorded"
             rounded = amount.quantize(Decimal(".01"), rounding=ROUND_HALF_UP)
-            return format(rounded if rounded else Decimal(0), "f").rstrip("0").rstrip(".") if "." in format(rounded, "f") else format(rounded, "f")
+            if not rounded:
+                return "0"
+            text = format(rounded, "f")
+            return text.rstrip("0").rstrip(".") if "." in text else text
     except (InvalidOperation, ValueError, TypeError):
         return value
 

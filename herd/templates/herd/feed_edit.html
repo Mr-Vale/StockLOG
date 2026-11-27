@@ -35,7 +35,7 @@
 <form method="post" data-recovery>{% csrf_token %}<input type="hidden" name="farm_context" value="{{ request.farm_context }}"><input type="hidden" name="confirmed_payload" value="{{ confirmation }}"><button>Save</button></form>
 <a href="">Return to form</a>
 {% elif form %}
-<h2>{{ title }}</h2>
+{% if product %}<h2>{{ title }}</h2>{% endif %}
 <p>To change the price, retire this product, then add it again with the new price.</p>
 <p>{% if action == 'remove' %}Record the actual balance after removal and choose whether to retire each product. Leaving the balance unchanged retires the record without a stock deduction.{% else %}Enter actual balances and retirement status. These audited corrections do not reprice past cattle costs.{% endif %}</p>
 <form method="post" class="entry-form" data-recovery>{% csrf_token %}<input type="hidden" name="farm_context" value="{{ request.farm_context }}"><input type="hidden" name="selection_token" value="{{ selection_token }}"><input type="hidden" name="task" value="preview">{{ form.non_field_errors }}
