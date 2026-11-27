@@ -158,7 +158,8 @@ def adjust_selected(actor, event, data):
         saved.append(dict(item=item.pk, retired=item.retired, balance=str(item.balance)))
         changes.append(dict(product=item.name, unit=item.base_unit, before=item.balance,
                             after=actual, removed=item.balance-actual,
-                            before_retired=item.retired, retired=row["retired"], reason=row["reason"]))
+                            before_retired=item.retired, retired=row["retired"], reason=row["reason"],
+                            balance_changed=item.balance != actual, status_changed=item.retired != row["retired"]))
         if actual != item.balance:
             services.stocktake(actor, event, dict(item=item.pk, actual=actual, reason=row["reason"]))
         if row["retired"] != item.retired:

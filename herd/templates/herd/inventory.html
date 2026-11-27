@@ -6,8 +6,8 @@
 {% csrf_token %}<input type="hidden" name="farm_context" value="{{ request.farm_context }}">
 <div class="controls inventory-actions">
 <a class="button" role="link" {% if selection_mode %}aria-disabled="true" tabindex="-1"{% else %}href="{% url 'add_feed' %}"{% endif %}>Add Feed</a>
-{% if selection_mode == 'remove' %}<button name="task" value="select" disabled data-selection-next>Next</button>{% else %}<a class="button" role="link" {% if selection_mode %}aria-disabled="true" tabindex="-1"{% else %}href="?select=remove">Remove Feed</a>{% endif %}
-{% if selection_mode == 'edit' %}<button name="task" value="select" disabled data-selection-next>Next</button>{% else %}<a class="button" role="link" {% if selection_mode %}aria-disabled="true" tabindex="-1"{% else %}href="?select=edit">Bulk Edit</a>{% endif %}
+{% if selection_mode == 'remove' %}<button name="task" value="select" disabled data-selection-next>Next</button>{% else %}<a class="button" role="link" {% if selection_mode %}aria-disabled="true" tabindex="-1"{% else %}href="?select=remove"{% endif %}>Remove Feed</a>{% endif %}
+{% if selection_mode == 'edit' %}<button name="task" value="select" disabled data-selection-next>Next</button>{% else %}<a class="button" role="link" {% if selection_mode %}aria-disabled="true" tabindex="-1"{% else %}href="?select=edit"{% endif %}>Bulk Edit</a>{% endif %}
 <a class="button" role="link" {% if selection_mode %}aria-disabled="true" tabindex="-1"{% else %}href="{% url 'workflow' 'feeding' %}"{% endif %}>Cattle Feeding</a>
 {% if selection_mode %}<a href="{% url 'feed_inventory' %}">Cancel selection</a>{% endif %}
 </div>

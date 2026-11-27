@@ -27,9 +27,9 @@
 <div class="table"><table class="review"><thead><tr><th>Product</th>{% if action == 'remove' %}<th>Quantity removed</th><th>Resulting stock balance</th><th>Retire product</th>{% else %}<th>Field</th><th>Current value</th><th>Proposed value</th>{% endif %}<th>Reason</th></tr></thead><tbody>
 {% for row in changes %}{% if action == 'remove' %}<tr><td>{{ row.product }}</td><td>{{ row.removed|compact }} {{ row.unit }}</td><td>{{ row.after|compact }} {{ row.unit }}</td><td>{{ row.retired|yesno:'Yes,No' }}</td><td>{{ row.reason }}</td></tr>
 {% else %}
-{% if row.before != row.after %}<tr><td>{{ row.product }}</td><td>Remaining stock</td><td>{{ row.before|compact }} {{ row.unit }}</td><td>{{ row.after|compact }} {{ row.unit }}</td><td>{{ row.reason }}</td></tr>{% endif %}
-{% if row.before_retired != row.retired %}<tr><td>{{ row.product }}</td><td>Retired</td><td>{{ row.before_retired|yesno:'Yes,No' }}</td><td>{{ row.retired|yesno:'Yes,No' }}</td><td>{{ row.reason }}</td></tr>{% endif %}
-{% if row.before == row.after and row.before_retired == row.retired %}<tr><td>{{ row.product }}</td><td>No stock or status change</td><td>{{ row.before|compact }} {{ row.unit }}</td><td>{{ row.after|compact }} {{ row.unit }}</td><td>{{ row.reason }}</td></tr>{% endif %}
+{% if row.balance_changed %}<tr><td>{{ row.product }}</td><td>Remaining stock</td><td>{{ row.before|compact }} {{ row.unit }}</td><td>{{ row.after|compact }} {{ row.unit }}</td><td>{{ row.reason }}</td></tr>{% endif %}
+{% if row.status_changed %}<tr><td>{{ row.product }}</td><td>Retired</td><td>{{ row.before_retired|yesno:'Yes,No' }}</td><td>{{ row.retired|yesno:'Yes,No' }}</td><td>{{ row.reason }}</td></tr>{% endif %}
+{% if not row.balance_changed and not row.status_changed %}<tr><td>{{ row.product }}</td><td>No stock or status change</td><td>{{ row.before|compact }} {{ row.unit }}</td><td>{{ row.after|compact }} {{ row.unit }}</td><td>{{ row.reason }}</td></tr>{% endif %}
 {% endif %}{% endfor %}</tbody></table></div>
 <p>Nothing is saved until you confirm. Historical feeding records and cattle costs are retained.</p>
 <form method="post" data-recovery>{% csrf_token %}<input type="hidden" name="farm_context" value="{{ request.farm_context }}"><input type="hidden" name="confirmed_payload" value="{{ confirmation }}"><button>Save</button></form>
