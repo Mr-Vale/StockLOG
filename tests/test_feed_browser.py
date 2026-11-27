@@ -85,6 +85,7 @@ def test_inventory_entry_source_fields_and_unit_measurement_feeding(farm, live_s
         page.get_by_role("button", name="Preview", exact=True).click()
         expect(page.get_by_text("Synthetic residue test", exact=True)).to_be_visible()
         page.get_by_role("button", name="Save", exact=True).click()
+        expect(page).to_have_url(live_server.url + "/inventory/feed/")
         assert db_query(lambda: Inventory.objects.get(name="UI grain").date_kind) == "DOM"
         for width in [1440, 390]:
             page.set_viewport_size({"width": width, "height": 1000})
@@ -141,6 +142,7 @@ def test_inventory_entry_source_fields_and_unit_measurement_feeding(farm, live_s
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
             page.screenshot(path=str(OUT / f"preview-{width}.png"), full_page=True)
         page.get_by_role("button", name="Confirm Save", exact=True).click()
+        expect(page).to_have_url(live_server.url + "/inventory/feed/")
         assert db_query(lambda: Inventory.objects.get(pk=hay).balance) == 34475
         assert db_query(lambda: Allocation.objects.filter(category="feed", amount=-17.5).count()) == 2
         page.get_by_role("link", name="Cattle Feeding", exact=True).click()
