@@ -75,6 +75,7 @@ def test_selection_sort_details_bulk_and_removal(farm, live_server):
         page.get_by_role("button", name="Preview", exact=True).click()
         page.get_by_role("button", name="Save", exact=True).click()
         expect(page).to_have_url(live_server.url + "/inventory/feed/product/" + first + "/")
+        expect(page.get_by_role("button", name="Preview", exact=True)).to_be_visible()
         assert db_query(lambda: Inventory.objects.get(pk=first).balance) == 12
         page.get_by_role("link", name="Return to Feed Inventory", exact=True).click()
         page.get_by_role("link", name="Remove Feed", exact=True).click()
